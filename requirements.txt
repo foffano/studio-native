@@ -1,0 +1,10 @@
+flask>=3.0
+moviepy>=2.1
+requests>=2.32
+python-dotenv>=1.0
+Pillow>=11.2,<12
+numpy>=1.25
+imageio-ffmpeg>=0.4.9
+
+# Empacotamento do backend como executavel sidecar (Electron)
+pyinstaller>=6.6

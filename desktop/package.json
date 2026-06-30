@@ -1,0 +1,75 @@
+{
+  "name": "studio-native",
+  "version": "1.0.0",
+  "description": "Studio Native - gerador de videos com IA (Electron + React + backend Python)",
+  "author": "Studio Native",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev:vite": "vite",
+    "dev:electron": "cross-env STUDIO_DEV=1 wait-on tcp:127.0.0.1:5173 && electron .",
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev:vite\" \"npm:dev:electron\"",
+    "build": "vite build",
+    "dist": "vite build && electron-builder",
+    "dist:portable": "vite build && electron-builder --win portable",
+    "postinstall": "electron-builder install-app-deps || exit 0"
+  },
+  "build": {
+    "appId": "com.studionative.app",
+    "productName": "Studio Native",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/StudioNativeBackend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Studio Native"
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "^42.5.1",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.1.0",
+    "wait-on": "^9.0.10"
+  }
+}

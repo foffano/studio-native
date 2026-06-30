@@ -1,0 +1,24 @@
+.env
+__pycache__/
+*.pyc
+uploads/
+outputs/
+server.log
+so.log
+venv/
+.venv/
+
+# PyInstaller / ffmpeg bundle (raiz)
+/bin/
+/build/
+/dist/
+*.spec.bak
+
+# Electron / Node
+desktop/node_modules/
+desktop/dist/
+desktop/release/
+
+# artefatos de teste
+_frame_*.png
+frame_*.png
