@@ -42,7 +42,6 @@ export default function GenerateView({ config, reopen, onReopened }) {
   const [opts, setOpts] = useState(DEFAULTS);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [voiceSel, setVoiceSel] = useState("");
-  const [manualVoice, setManualVoice] = useState("");
   const [audioTheme, setAudioTheme] = useState("");
 
   const [busy, setBusy] = useState(false);
@@ -87,7 +86,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
       setError("Selecione um vídeo primeiro.");
       return;
     }
-    // Resolve a voz selecionada (cadastrada) ou um Voice ID avulso (fallback).
+    // Resolve a voz selecionada na biblioteca configurada em Ajustes.
     let resolvedVoice = null;
     if (audioEnabled) {
       if (!config?.elevenlabs_available) {
@@ -103,24 +102,15 @@ export default function GenerateView({ config, reopen, onReopened }) {
           return;
         }
         resolvedVoice = {
+          id: v.id,
           voice_id: v.voice_id,
           name: v.name,
           model_id: v.model_id || "",
           stability: v.stability ?? 0.5,
           similarity: v.similarity ?? 0.75,
         };
-      } else if (manualVoice.trim()) {
-        resolvedVoice = {
-          voice_id: manualVoice.trim(),
-          name: manualVoice.trim(),
-          model_id: "",
-          stability: 0.5,
-          similarity: 0.75,
-        };
       } else {
-        setError(
-          "Cadastre uma voz em Ajustes › Vozes, ou informe um Voice ID avulso."
-        );
+        setError("Cadastre uma voz em Ajustes > Vozes antes de gerar audio.");
         return;
       }
     }
@@ -138,6 +128,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
       fps: opts.fps,
       audioEnabled,
       audioTheme: audioTheme.trim(),
+      voiceProfileId: resolvedVoice ? resolvedVoice.id : "",
       voiceId: resolvedVoice ? resolvedVoice.voice_id : "",
       voiceName: resolvedVoice ? resolvedVoice.name : "",
       audioModel: resolvedVoice ? resolvedVoice.model_id : "",
@@ -156,6 +147,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
     fd.append("line_spacing", String(meta.lineSpacing));
     if (audioEnabled && resolvedVoice) {
       fd.append("audio_enabled", "1");
+      fd.append("voice_profile_id", resolvedVoice.id);
       fd.append("voice_id", resolvedVoice.voice_id);
       fd.append("audio_theme", meta.audioTheme);
       fd.append("audio_model_id", resolvedVoice.model_id);
@@ -361,22 +353,10 @@ export default function GenerateView({ config, reopen, onReopened }) {
                     })()}
                   </div>
                 ) : (
-                  <>
-                    <div className="banner banner--warn">
-                      Nenhuma voz cadastrada. Vá em <b>Ajustes › Vozes</b> para
-                      cadastrar suas vozes da ElevenLabs. Você também pode
-                      informar um Voice ID avulso abaixo.
-                    </div>
-                    <div className="field">
-                      <label className="field__label">Voice ID avulso</label>
-                      <input
-                        className="input"
-                        placeholder="ex.: 21m00Tcm4TlvDq8ikWAM"
-                        value={manualVoice}
-                        onChange={(e) => setManualVoice(e.target.value)}
-                      />
-                    </div>
-                  </>
+                  <div className="banner banner--warn">
+                    Nenhuma voz cadastrada. Vá em <b>Ajustes &gt; Vozes</b> para
+                    cadastrar suas vozes da ElevenLabs antes de gerar áudio.
+                  </div>
                 )}
 
                 <div className="field">
