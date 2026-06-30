@@ -20,6 +20,7 @@ export default function App() {
   );
   const [config, setConfig] = useState(null);
   const [reopen, setReopen] = useState(null);
+  const [updateState, setUpdateState] = useState(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -38,6 +39,29 @@ export default function App() {
     refreshConfig();
   }, []);
 
+  useEffect(() => {
+    const updates = window.studioNative?.updates;
+    if (!updates) return undefined;
+    updates.getState().then(setUpdateState).catch(() => {});
+    const unsubscribe = updates.onState(setUpdateState);
+    return unsubscribe;
+  }, []);
+
+  const updateAction = async (action) => {
+    const updates = window.studioNative?.updates;
+    if (!updates) return;
+    try {
+      if (action === "check") setUpdateState(await updates.check());
+      if (action === "download") setUpdateState(await updates.download());
+      if (action === "install") await updates.install();
+    } catch (e) {
+      setUpdateState({
+        status: "error",
+        message: e.message || "Falha ao processar atualizacao.",
+      });
+    }
+  };
+
   const openHistoryEntry = (entry) => {
     setReopen(entry);
     setView("generate");
@@ -54,6 +78,8 @@ export default function App() {
         onToggleTheme={() =>
           setTheme((t) => (t === "dark" ? "light" : "dark"))
         }
+        updateState={updateState}
+        onUpdateAction={updateAction}
       />
 
       <main className="content">

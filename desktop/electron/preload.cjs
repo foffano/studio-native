@@ -1,4 +1,4 @@
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 function readBackendUrl() {
   // 1) via env (definido pelo main antes de criar a janela)
@@ -13,4 +13,15 @@ contextBridge.exposeInMainWorld("studioNative", {
   backendUrl: readBackendUrl(),
   isElectron: true,
   platform: process.platform,
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:get-state"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install"),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("updates:state", listener);
+      return () => ipcRenderer.removeListener("updates:state", listener);
+    },
+  },
 });

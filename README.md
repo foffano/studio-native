@@ -67,6 +67,16 @@ Saída em `desktop/release/` (ex.: `Studio Native Setup x.y.z.exe` e a versão p
 
 > Em produção, o Electron procura o backend em `resources/backend/StudioNativeBackend.exe`; em dev, roda `python app.py`. Defina `STUDIO_PYTHON` para apontar para um interpretador específico em dev, se necessário.
 
+## Atualizações automáticas
+
+O app instalado verifica novas releases no GitHub (`foffano/studio-native`) usando `electron-updater`. Quando uma release mais recente estiver disponível, a barra lateral mostra o aviso, permite baixar a atualização e reiniciar o app para instalar. Em desenvolvimento (`npm run dev`) o updater fica desativado.
+
+Para releases funcionarem com atualização automática, publique junto ao instalador NSIS os arquivos gerados por `electron-builder` em `desktop/release/`, especialmente:
+
+- `Studio-Native-Setup-x.y.z.exe`
+- `Studio-Native-Setup-x.y.z.exe.blockmap`
+- `latest.yml`
+
 ## Como funciona (geração)
 
 1. Você envia um vídeo e (opcionalmente) digita um tema/contexto.

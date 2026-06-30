@@ -13,7 +13,32 @@ const NAV = [
   { id: "history", label: "Histórico", icon: IconHistory },
 ];
 
-export default function Sidebar({ view, onNavigate, theme, onToggleTheme }) {
+function updateButtonLabel(status) {
+  if (status === "available") return "Baixar atualização";
+  if (status === "downloaded") return "Reiniciar e instalar";
+  if (status === "checking") return "Verificando...";
+  if (status === "downloading") return "Baixando...";
+  return "Verificar atualizações";
+}
+
+function updateActionFor(status) {
+  if (status === "available") return "download";
+  if (status === "downloaded") return "install";
+  return "check";
+}
+
+export default function Sidebar({
+  view,
+  onNavigate,
+  theme,
+  onToggleTheme,
+  updateState,
+  onUpdateAction,
+}) {
+  const updatesEnabled = !!onUpdateAction;
+  const updateStatus = updateState?.status || "idle";
+  const updateBusy = updateStatus === "checking" || updateStatus === "downloading";
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -44,6 +69,21 @@ export default function Sidebar({ view, onNavigate, theme, onToggleTheme }) {
       <div className="sidebar__spacer" />
 
       <div className="sidebar__footer">
+        {updatesEnabled && (
+          <div className="update-card">
+            <div className="update-card__title">Atualizações</div>
+            <div className="update-card__msg">
+              {updateState?.message || "Verifique novas releases no GitHub."}
+            </div>
+            <button
+              className="update-card__btn"
+              disabled={updateBusy}
+              onClick={() => onUpdateAction(updateActionFor(updateStatus))}
+            >
+              {updateButtonLabel(updateStatus)}
+            </button>
+          </div>
+        )}
         <button className="nav__item" onClick={onToggleTheme}>
           {theme === "dark" ? <IconSun /> : <IconMoon />}
           {theme === "dark" ? "Tema claro" : "Tema escuro"}
