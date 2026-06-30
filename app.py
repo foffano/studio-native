@@ -61,7 +61,6 @@ def user_data_dir():
 
 BASE_DIR = Path(__file__).resolve().parent
 RESOURCE_DIR = resource_path(".")
-STATIC_DIR = resource_path("static")
 FONTS_DIR = resource_path("fonts")
 
 USER_DATA_DIR = user_data_dir()
@@ -1037,11 +1036,6 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None):
                 Path(p).unlink(missing_ok=True)
             except OSError:
                 pass
-
-
-@app.route("/")
-def index():
-    return send_from_directory(STATIC_DIR, "index.html")
 
 
 @app.route("/api/<path:_unused>", methods=["OPTIONS"])

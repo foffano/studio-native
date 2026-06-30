@@ -41,7 +41,7 @@ npm run dev
 
 O `npm run dev` inicia o Vite (porta 5173), aguarda, e abre o Electron — que escolhe uma porta livre, sobe `python app.py` com `STUDIO_PORT`, espera o `/api/health` e carrega a UI. As chaves podem ser inseridas na aba **Ajustes** (ou via `.env` na raiz).
 
-> Para rodar só o backend (modo web legado): `python app.py` e abra `http://127.0.0.1:5050`. A porta vem de `STUDIO_PORT`/`PORT` (default 5050).
+> Para depurar só o backend, rode `python app.py`; ele expõe apenas a API local usada pelo Electron. A porta vem de `STUDIO_PORT`/`PORT` (default 5050).
 
 ## Gerar o instalável (.exe)
 
@@ -142,7 +142,7 @@ Na seção "Opções de estilo" você pode ajustar tamanho da fonte, FPS, o **es
 ## Configuração / chaves
 
 - Tela **Ajustes** (React) para `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL` e altura máxima de render. As chaves são **mascaradas** na UI.
-- **Biblioteca de vozes (ElevenLabs):** em Ajustes › *Vozes* você cadastra várias vozes (nome/apelido + Voice ID + `model_id`/`stability`/`similarity` opcionais). Elas são salvas em `config.json` (chave `voices`) e ficam disponíveis num **seletor** no modo com áudio da aba de geração — sem digitar o Voice ID toda vez. Os parâmetros por voz têm precedência sobre os defaults globais; ainda é possível informar um Voice ID avulso quando não há vozes cadastradas.
+- **Biblioteca de vozes (ElevenLabs):** em Ajustes › *Vozes* você cadastra várias vozes (nome/apelido + Voice ID + `model_id`/`stability`/`similarity` opcionais). Elas são salvas em `config.json` (chave `voices`) e ficam disponíveis num **seletor** no modo com áudio da aba de geração — sem digitar o Voice ID toda vez. Os parâmetros por voz têm precedência sobre os defaults globais.
 - Persistência em `%APPDATA%/StudioNative/config.json` (lido pelo backend). Precedência: **config.json > variáveis de ambiente/.env > default**. As mudanças valem **imediatamente**, sem reiniciar.
 - Endpoints: `GET/POST /api/settings`, `GET /api/config`, `GET /api/health`. CORS liberado (o servidor escuta apenas em `127.0.0.1`).
 - Dados de usuário (uploads/outputs/config) ficam em `%APPDATA%/StudioNative/` — fora do bundle, gravável.
@@ -151,11 +151,10 @@ Na seção "Opções de estilo" você pode ajustar tamanho da fonte, FPS, o **es
 
 ```
 app.py                       # backend Flask (sidecar): OpenRouter/ElevenLabs + MoviePy/Pillow/ffmpeg
-studio_native_backend.spec   # PyInstaller: empacota o backend + static + fonts + bin/ (ffmpeg)
+studio_native_backend.spec   # PyInstaller: empacota o backend + fonts + bin/ (ffmpeg)
 tools/fetch_ffmpeg.py        # baixa ffmpeg/ffprobe para bin/
 requirements.txt             # deps Python (inclui pyinstaller)
 fonts/Quicksand.ttf          # fonte arredondada empacotada
-static/index.html            # UI web legada (mantida; o app usa o React)
 bin/                         # ffmpeg.exe/ffprobe.exe (gerado por fetch_ffmpeg.py)
 
 desktop/                     # app Electron + React

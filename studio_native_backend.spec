@@ -2,7 +2,7 @@
 """PyInstaller spec do backend "Studio Native" (sidecar do Electron).
 
 Gera uma pasta dist/StudioNativeBackend/ com o executavel e todos os recursos
-(static, fonts, ffmpeg/ffprobe). O Electron empacota essa pasta em
+(fonts, ffmpeg/ffprobe). O Electron empacota essa pasta em
 resources/backend e a spawna em producao.
 
 Build:
@@ -27,8 +27,8 @@ for pkg in ("moviepy", "imageio", "imageio_ffmpeg"):
     except Exception as exc:  # noqa: BLE001
         print(f"[spec] collect_all falhou para {pkg}: {exc}")
 
-# Assets do app.
-datas += [("static", "static"), ("fonts", "fonts")]
+# Assets do backend.
+datas += [("fonts", "fonts")]
 
 # ffmpeg/ffprobe empacotados (se baixados em bin/).
 if os.path.isdir("bin"):
