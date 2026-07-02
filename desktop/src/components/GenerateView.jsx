@@ -9,6 +9,7 @@ import {
   IconMic,
   IconPlus,
   IconMinus,
+  IconCheck,
 } from "./Icons.jsx";
 
 const DEFAULTS = {
@@ -23,6 +24,22 @@ const DEFAULTS = {
   fps: 30,
 };
 
+const STAGES = [
+  { key: "queued", label: "Fila" },
+  { key: "normalizing", label: "Normalizar" },
+  { key: "generating_text", label: "Frases" },
+  { key: "tts", label: "Voz" },
+  { key: "rendering", label: "Renderizar" },
+  { key: "done", label: "Pronto" },
+];
+
+const STAGE_ORDER = STAGES.map((s) => s.key);
+
+function stageIndex(status) {
+  const i = STAGE_ORDER.indexOf(status);
+  return i >= 0 ? i : 0;
+}
+
 function metaChips(meta) {
   const chips = [];
   if (meta.audioEnabled) chips.push("Narração (ElevenLabs)");
@@ -36,7 +53,7 @@ function metaChips(meta) {
   return chips;
 }
 
-export default function GenerateView({ config, reopen, onReopened }) {
+export default function GenerateView({ config, activeEntry, onHistoryChange }) {
   const [file, setFile] = useState(null);
   const [drag, setDrag] = useState(false);
   const [opts, setOpts] = useState(DEFAULTS);
@@ -45,32 +62,45 @@ export default function GenerateView({ config, reopen, onReopened }) {
   const [audioTheme, setAudioTheme] = useState("");
 
   const [busy, setBusy] = useState(false);
+  const [jobStatus, setJobStatus] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [results, setResults] = useState([]);
   const [resultMeta, setResultMeta] = useState(null);
   const pollRef = useRef(null);
+  const resultsRef = useRef(null);
+  const prevResultCount = useRef(0);
 
   const voices = config?.voices || [];
   const set = (patch) => setOpts((o) => ({ ...o, ...patch }));
 
-  // Seleciona a primeira voz automaticamente quando a lista carrega.
   useEffect(() => {
     if (voices.length && !voices.some((v) => v.id === voiceSel)) {
       setVoiceSel(voices[0].id);
     }
   }, [config]);
 
-  // Reabrir uma entrada do histórico (somente exibe os resultados salvos).
   useEffect(() => {
-    if (reopen) {
-      setResults(reopen.results || []);
-      setResultMeta(reopen.meta || null);
+    if (activeEntry) {
+      setResults(activeEntry.results || []);
+      setResultMeta(activeEntry.meta || null);
       setError("");
-      onReopened && onReopened();
+      setBusy(false);
+      setProgress(100);
+      setJobStatus("done");
     }
-  }, [reopen]);
+  }, [activeEntry]);
+
+  useEffect(() => {
+    if (
+      results.length > prevResultCount.current &&
+      resultsRef.current
+    ) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    prevResultCount.current = results.length;
+  }, [results.length]);
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
@@ -86,7 +116,6 @@ export default function GenerateView({ config, reopen, onReopened }) {
       setError("Selecione um vídeo primeiro.");
       return;
     }
-    // Resolve a voz selecionada na biblioteca configurada em Ajustes.
     let resolvedVoice = null;
     if (audioEnabled) {
       if (!config?.elevenlabs_available) {
@@ -157,8 +186,10 @@ export default function GenerateView({ config, reopen, onReopened }) {
 
     setBusy(true);
     setResults([]);
+    prevResultCount.current = 0;
     setResultMeta(meta);
     setProgress(4);
+    setJobStatus("queued");
     setStatusMsg("Enviando vídeo...");
 
     try {
@@ -172,10 +203,11 @@ export default function GenerateView({ config, reopen, onReopened }) {
 
   function poll(jobId, meta) {
     clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
+    const tick = async () => {
       try {
         const j = await getStatus(jobId);
         setStatusMsg(j.message || j.status || "");
+        setJobStatus(j.status || "");
         setProgress(j.progress || 0);
         if (j.results && j.results.length) setResults(j.results);
         if (j.status === "done") {
@@ -190,6 +222,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
             meta,
             results: finalResults,
           });
+          onHistoryChange && onHistoryChange(jobId);
         } else if (j.status === "error") {
           clearInterval(pollRef.current);
           setBusy(false);
@@ -200,8 +233,13 @@ export default function GenerateView({ config, reopen, onReopened }) {
         setBusy(false);
         setError("Falha ao consultar status: " + e.message);
       }
-    }, 1400);
+    };
+    tick();
+    pollRef.current = setInterval(tick, 800);
   }
+
+  const currentStage = stageIndex(jobStatus);
+  const showStages = busy || (jobStatus && jobStatus !== "error");
 
   return (
     <>
@@ -213,8 +251,31 @@ export default function GenerateView({ config, reopen, onReopened }) {
       )}
       {error && <div className="banner banner--error">Erro: {error}</div>}
 
+      {showStages && (
+        <div className={"gen-stages" + (busy ? " gen-stages--live" : "")}>
+          {STAGES.filter((s) => s.key !== "tts" || audioEnabled).map((s, i) => {
+            const done = i < currentStage;
+            const active = i === currentStage && busy;
+            return (
+              <div
+                key={s.key}
+                className={
+                  "gen-stage" +
+                  (done ? " done" : "") +
+                  (active ? " active" : "")
+                }
+              >
+                <span className="gen-stage__dot">
+                  {done ? <IconCheck width={12} height={12} /> : i + 1}
+                </span>
+                <span className="gen-stage__label">{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="grid grid--2">
-        {/* Coluna esquerda: upload + opções principais */}
         <div>
           <div className="card">
             <h3 className="card__title">
@@ -264,6 +325,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                 placeholder="Ex.: promoção relâmpago de tênis, humor, curiosidades..."
                 value={opts.theme}
                 onChange={(e) => set({ theme: e.target.value })}
+                disabled={busy}
               />
               <div className="field__hint">
                 Apenas texto é enviado à OpenRouter — o vídeo nunca sai do seu PC.
@@ -274,15 +336,22 @@ export default function GenerateView({ config, reopen, onReopened }) {
               <div className="field">
                 <label className="field__label">Número de variações</label>
                 <div className="stepper">
-                  <button onClick={() => set({ num: clampNum(opts.num - 1) })}>
+                  <button
+                    disabled={busy}
+                    onClick={() => set({ num: clampNum(opts.num - 1) })}
+                  >
                     <IconMinus width={16} height={16} />
                   </button>
                   <input
                     value={opts.num}
+                    disabled={busy}
                     onChange={(e) => set({ num: e.target.value })}
                     onBlur={(e) => set({ num: clampNum(e.target.value) })}
                   />
-                  <button onClick={() => set({ num: clampNum(opts.num + 1) })}>
+                  <button
+                    disabled={busy}
+                    onClick={() => set({ num: clampNum(opts.num + 1) })}
+                  >
                     <IconPlus width={16} height={16} />
                   </button>
                 </div>
@@ -299,7 +368,6 @@ export default function GenerateView({ config, reopen, onReopened }) {
             </div>
           </div>
 
-          {/* Modo com áudio */}
           <div className="card">
             <h3 className="card__title">
               <span className="dot">
@@ -311,6 +379,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
               <input
                 type="checkbox"
                 checked={audioEnabled}
+                disabled={busy}
                 onChange={(e) => setAudioEnabled(e.target.checked)}
               />
               <span className="toggle__track" />
@@ -331,6 +400,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                     <select
                       className="select"
                       value={voiceSel}
+                      disabled={busy}
                       onChange={(e) => setVoiceSel(e.target.value)}
                     >
                       {voices.map((v) => (
@@ -367,6 +437,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                     className="input"
                     placeholder="Roteiro da fala (separado do tema da frase)"
                     value={audioTheme}
+                    disabled={busy}
                     onChange={(e) => setAudioTheme(e.target.value)}
                   />
                 </div>
@@ -382,7 +453,6 @@ export default function GenerateView({ config, reopen, onReopened }) {
           </div>
         </div>
 
-        {/* Coluna direita: estilo do texto + ação */}
         <div>
           <div className="card">
             <h3 className="card__title">Estilo do texto</h3>
@@ -410,6 +480,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                   className="input"
                   type="number"
                   value={opts.fontSize}
+                  disabled={busy}
                   onChange={(e) =>
                     set({ fontSize: parseInt(e.target.value) || 40 })
                   }
@@ -421,6 +492,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                   className="input"
                   type="number"
                   value={opts.strokeWidth}
+                  disabled={busy}
                   onChange={(e) =>
                     set({ strokeWidth: parseInt(e.target.value) || 0 })
                   }
@@ -435,6 +507,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                   className="input"
                   type="number"
                   value={opts.fps}
+                  disabled={busy}
                   onChange={(e) => set({ fps: parseInt(e.target.value) || 30 })}
                 />
               </div>
@@ -451,6 +524,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
                   max="2"
                   step="0.05"
                   value={opts.lineSpacing}
+                  disabled={busy}
                   onChange={(e) =>
                     set({ lineSpacing: parseFloat(e.target.value) })
                   }
@@ -459,9 +533,9 @@ export default function GenerateView({ config, reopen, onReopened }) {
             </div>
           </div>
 
-          <div className="card">
+          <div className={"card" + (busy ? " card--generating" : "")}>
             <button
-              className="btn btn--primary btn--block"
+              className={"btn btn--primary btn--block" + (busy ? " btn--pulse" : "")}
               disabled={busy}
               onClick={start}
             >
@@ -469,7 +543,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
             </button>
 
             {busy && (
-              <div className="progress">
+              <div className="progress progress--live">
                 <div className="progress__msg">
                   <span className="spinner" />
                   {statusMsg}
@@ -480,18 +554,23 @@ export default function GenerateView({ config, reopen, onReopened }) {
                     style={{ width: progress + "%" }}
                   />
                 </div>
+                <div className="progress__pct">{Math.round(progress)}%</div>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Resultados */}
       {results.length > 0 && (
-        <div className="card" style={{ marginTop: 18 }}>
+        <div className="card results-panel" ref={resultsRef} style={{ marginTop: 18 }}>
           <h3 className="card__title">
             Resultados · {results.length}{" "}
             {results.length === 1 ? "vídeo" : "vídeos"}
+            {busy && (
+              <span className="results-live-badge">
+                <span className="spinner spinner--sm" /> ao vivo
+              </span>
+            )}
           </h3>
           {resultMeta && (
             <div className="chips">
@@ -504,7 +583,7 @@ export default function GenerateView({ config, reopen, onReopened }) {
           )}
           <div className="results">
             {results.map((r, i) => (
-              <ResultCard key={i} r={r} />
+              <ResultCard key={r.file || i} r={r} index={i} isNew={busy} />
             ))}
           </div>
         </div>
@@ -513,11 +592,14 @@ export default function GenerateView({ config, reopen, onReopened }) {
   );
 }
 
-function ResultCard({ r }) {
+function ResultCard({ r, index, isNew }) {
   const [broken, setBroken] = useState(false);
   const url = outputUrl(r.file);
   return (
-    <div className="rcard">
+    <div
+      className={"rcard" + (isNew ? " rcard--enter" : "")}
+      style={{ animationDelay: `${index * 0.12}s` }}
+    >
       {broken ? (
         <div className="rcard__unavail">
           Vídeo indisponível (arquivo removido do servidor).

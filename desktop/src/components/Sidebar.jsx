@@ -1,17 +1,18 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import logoUrl from "../assets/logo.png";
 import {
-  IconVideo,
-  IconHistory,
+  loadHistory,
+  deleteEntry,
+  getEntryTitle,
+  formatHistoryDate,
+} from "../lib/history.js";
+import {
   IconSettings,
   IconSun,
   IconMoon,
+  IconPlus,
+  IconTrash,
 } from "./Icons.jsx";
-
-const NAV = [
-  { id: "generate", label: "Gerar vídeo", icon: IconVideo },
-  { id: "history", label: "Histórico", icon: IconHistory },
-];
 
 function updateButtonLabel(status) {
   if (status === "available") return "Baixar atualização";
@@ -34,10 +35,28 @@ export default function Sidebar({
   onToggleTheme,
   updateState,
   onUpdateAction,
+  activeChatId,
+  onSelectChat,
+  onNewChat,
+  historyVersion,
 }) {
+  const [chats, setChats] = useState([]);
+
+  useEffect(() => {
+    setChats(loadHistory());
+  }, [historyVersion]);
+
   const updatesEnabled = !!onUpdateAction;
   const updateStatus = updateState?.status || "idle";
-  const updateBusy = updateStatus === "checking" || updateStatus === "downloading";
+  const updateBusy =
+    updateStatus === "checking" || updateStatus === "downloading";
+
+  const handleDelete = (e, id) => {
+    e.stopPropagation();
+    if (!confirm("Apagar esta geração do histórico?")) return;
+    setChats(deleteEntry(id));
+    if (activeChatId === id) onNewChat();
+  };
 
   return (
     <aside className="sidebar">
@@ -49,22 +68,51 @@ export default function Sidebar({
         </div>
       </div>
 
-      <nav className="nav">
-        <div className="nav__label">Estúdio</div>
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          return (
+      <button
+        className={
+          "chat-new" + (view === "generate" && !activeChatId ? " active" : "")
+        }
+        onClick={onNewChat}
+      >
+        <IconPlus width={16} height={16} />
+        Nova geração
+      </button>
+
+      <div className="chat-list">
+        {chats.length === 0 ? (
+          <div className="chat-list__empty">Nenhuma geração ainda</div>
+        ) : (
+          chats.map((entry) => (
             <button
-              key={item.id}
-              className={"nav__item" + (view === item.id ? " active" : "")}
-              onClick={() => onNavigate(item.id)}
+              key={entry.id}
+              className={
+                "chat-item" +
+                (activeChatId === entry.id && view === "generate"
+                  ? " active"
+                  : "")
+              }
+              onClick={() => onSelectChat(entry)}
+              title={getEntryTitle(entry)}
             >
-              <Icon />
-              {item.label}
+              <span className="chat-item__title">{getEntryTitle(entry)}</span>
+              <span className="chat-item__meta">
+                <span className="chat-item__date">
+                  {formatHistoryDate(entry.date)}
+                </span>
+                <span
+                  className="chat-item__del"
+                  role="button"
+                  tabIndex={-1}
+                  title="Apagar"
+                  onClick={(e) => handleDelete(e, entry.id)}
+                >
+                  <IconTrash width={13} height={13} />
+                </span>
+              </span>
             </button>
-          );
-        })}
-      </nav>
+          ))
+        )}
+      </div>
 
       <div className="sidebar__spacer" />
 

@@ -1,4 +1,5 @@
 const HIST_KEY = "studio_native_history_v1";
+const TITLE_MAX = 28;
 
 export function loadHistory() {
   try {
@@ -34,4 +35,37 @@ export function deleteEntry(id) {
 export function clearHistory() {
   saveHistory([]);
   return [];
+}
+
+export function getEntryTitle(entry) {
+  const theme = (entry.meta?.theme || "").trim();
+  if (theme) {
+    return theme.length > TITLE_MAX ? theme.slice(0, TITLE_MAX) + "…" : theme;
+  }
+  const name = entry.meta?.sourceName || "Nova geração";
+  return name.length > TITLE_MAX ? name.slice(0, TITLE_MAX) + "…" : name;
+}
+
+export function formatHistoryDate(iso) {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return "Ontem";
+    const sameYear = d.getFullYear() === now.getFullYear();
+    return d.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+      ...(sameYear ? {} : { year: "2-digit" }),
+    });
+  } catch (_) {
+    return "";
+  }
 }

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import GenerateView from "./components/GenerateView.jsx";
-import HistoryView from "./components/HistoryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
 import { getConfig } from "./api.js";
 
@@ -9,7 +8,6 @@ const THEME_KEY = "studio_native_theme";
 
 const HEADINGS = {
   generate: { eyebrow: "Estúdio", title: "Gerar vídeo" },
-  history: { eyebrow: "Estúdio", title: "Histórico" },
   settings: { eyebrow: "Configuração", title: "Ajustes" },
 };
 
@@ -19,7 +17,9 @@ export default function App() {
     () => localStorage.getItem(THEME_KEY) || "light"
   );
   const [config, setConfig] = useState(null);
-  const [reopen, setReopen] = useState(null);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [activeEntry, setActiveEntry] = useState(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [updateState, setUpdateState] = useState(null);
 
   useEffect(() => {
@@ -62,12 +62,24 @@ export default function App() {
     }
   };
 
-  const openHistoryEntry = (entry) => {
-    setReopen(entry);
+  const handleNewChat = () => {
+    setActiveChatId(null);
+    setActiveEntry(null);
     setView("generate");
   };
 
-  const head = HEADINGS[view];
+  const handleSelectChat = (entry) => {
+    setActiveChatId(entry.id);
+    setActiveEntry(entry);
+    setView("generate");
+  };
+
+  const handleHistoryChange = (entryId) => {
+    setHistoryVersion((v) => v + 1);
+    if (entryId) setActiveChatId(entryId);
+  };
+
+  const head = HEADINGS[view] || HEADINGS.generate;
 
   return (
     <div className="app">
@@ -80,6 +92,10 @@ export default function App() {
         }
         updateState={updateState}
         onUpdateAction={updateAction}
+        activeChatId={activeChatId}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
+        historyVersion={historyVersion}
       />
 
       <main className="content">
@@ -92,14 +108,13 @@ export default function App() {
               </div>
             </div>
             <GenerateView
+              key={activeChatId || "new"}
               config={config}
-              reopen={reopen}
-              onReopened={() => setReopen(null)}
+              activeEntry={activeEntry}
+              onHistoryChange={handleHistoryChange}
             />
           </>
         )}
-
-        {view === "history" && <HistoryView onOpen={openHistoryEntry} />}
 
         {view === "settings" && <SettingsView onSaved={refreshConfig} />}
       </main>
