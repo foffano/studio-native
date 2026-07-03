@@ -25,6 +25,7 @@ function fmtSize(bytes) {
 function statusLabel(status) {
   if (status === "ready") return "Pronto";
   if (status === "processing") return "Processando";
+  if (status === "queued") return "Na fila";
   if (status === "error") return "Erro";
   return status;
 }
@@ -56,8 +57,10 @@ export default function LibraryView({ onUseForGeneration }) {
 
   useEffect(() => {
     clearInterval(pollRef.current);
-    const hasProcessing = items.some((i) => i.status === "processing");
-    if (hasProcessing) {
+    const hasPending = items.some(
+      (i) => i.status === "processing" || i.status === "queued"
+    );
+    if (hasPending) {
       pollRef.current = setInterval(refresh, 2000);
     }
     return () => clearInterval(pollRef.current);
@@ -239,17 +242,17 @@ function LibraryCard({
   onGenerate,
 }) {
   const ready = item.status === "ready";
-  const processing = item.status === "processing";
+  const pending = item.status === "processing" || item.status === "queued";
   const url = ready && item.file ? libraryVideoUrl(item.file) : null;
 
   return (
-    <div className={"lib-card" + (processing ? " lib-card--busy" : "")}>
+    <div className={"lib-card" + (pending ? " lib-card--busy" : "")}>
       <div className="lib-card__media">
         {url ? (
           <video src={url} muted preload="metadata" />
         ) : (
           <div className="lib-card__placeholder">
-            {processing ? <span className="spinner" /> : <IconVideo width={28} height={28} />}
+            {pending ? <span className="spinner" /> : <IconVideo width={28} height={28} />}
           </div>
         )}
         <span className={"lib-card__status lib-card__status--" + item.status}>
@@ -276,7 +279,7 @@ function LibraryCard({
         {item.status === "error" && item.error && (
           <div className="lib-card__err">{item.error}</div>
         )}
-        {processing && item.message && (
+        {pending && item.message && (
           <div className="lib-card__msg">{item.message}</div>
         )}
 

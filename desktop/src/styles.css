@@ -1182,6 +1182,9 @@ input[type="range"] {
 .lib-card__status--ready {
   background: rgba(21, 128, 61, 0.9);
 }
+.lib-card__status--queued {
+  background: rgba(100, 116, 139, 0.9);
+}
 .lib-card__status--processing {
   background: rgba(47, 111, 237, 0.9);
 }

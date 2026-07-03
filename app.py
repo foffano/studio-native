@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import queue
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -221,6 +222,9 @@ JOBS_LOCK = threading.Lock()
 # Biblioteca de videos pre-processados (normalizados e prontos para geracao).
 LIBRARY = {}
 LIBRARY_LOCK = threading.Lock()
+LIBRARY_QUEUE = queue.Queue()
+LIBRARY_WORKER_LOCK = threading.Lock()
+LIBRARY_WORKER_STARTED = False
 
 
 def _load_library_file():
@@ -285,6 +289,8 @@ def library_metrics():
             ready += 1
         elif st == "processing":
             processing += 1
+        elif st == "queued":
+            processing += 1  # contabiliza em "processando" no painel
         elif st == "error":
             error += 1
         total_generations += int(it.get("generation_count") or 0)
@@ -357,7 +363,70 @@ def preprocess_library_item(item_id, src_path):
             pass
 
 
+def _library_worker():
+    """Processa um video por vez — evita N instancias ffmpeg em paralelo."""
+    while True:
+        item_id, src_path = LIBRARY_QUEUE.get()
+        try:
+            preprocess_library_item(item_id, src_path)
+        finally:
+            LIBRARY_QUEUE.task_done()
+
+
+def _ensure_library_worker():
+    global LIBRARY_WORKER_STARTED
+    with LIBRARY_WORKER_LOCK:
+        if LIBRARY_WORKER_STARTED:
+            return
+        thread = threading.Thread(
+            target=_library_worker,
+            name="library-preprocess-worker",
+            daemon=True,
+        )
+        thread.start()
+        LIBRARY_WORKER_STARTED = True
+
+
+def _library_queue_message():
+    pending = LIBRARY_QUEUE.qsize()
+    if pending <= 1:
+        return "Na fila de pre-processamento..."
+    return f"Na fila de pre-processamento ({pending} aguardando)..."
+
+
+def enqueue_library_preprocess(item_id, src_path):
+    _ensure_library_worker()
+    set_library_item(
+        item_id,
+        status="queued",
+        message=_library_queue_message(),
+        error="",
+    )
+    LIBRARY_QUEUE.put((item_id, str(src_path)))
+
+
+def recover_library_on_startup():
+    """Re-enfileira itens pendentes ou marca interrompidos apos reinicio."""
+    with LIBRARY_LOCK:
+        snapshot = list(LIBRARY.items())
+    for item_id, item in snapshot:
+        st = item.get("status")
+        if st not in ("queued", "processing"):
+            continue
+        staging = next(LIBRARY_STAGING.glob(f"{item_id}.*"), None)
+        if staging and staging.is_file():
+            enqueue_library_preprocess(item_id, staging)
+        else:
+            set_library_item(
+                item_id,
+                status="error",
+                message="Processamento interrompido.",
+                error="Reenvie o video para pre-processar.",
+            )
+
+
 init_library()
+recover_library_on_startup()
 
 
 def find_system_font():
@@ -1405,7 +1474,7 @@ def api_library_upload():
         item_id,
         id=item_id,
         name=file.filename,
-        status="processing",
+        status="queued",
         message="Na fila de pre-processamento...",
         error="",
         tags=[],
@@ -1418,12 +1487,7 @@ def api_library_upload():
         file="",
     )
 
-    thread = threading.Thread(
-        target=preprocess_library_item,
-        args=(item_id, staging),
-        daemon=True,
-    )
-    thread.start()
+    enqueue_library_preprocess(item_id, staging)
     return jsonify({"id": item_id, "item": get_library_item(item_id)})
 
 
