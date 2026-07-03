@@ -59,3 +59,34 @@ export async function getStatus(jobId) {
   const res = await fetch(apiUrl(`/api/status/${jobId}`));
   return jsonOrThrow(res);
 }
+
+export const libraryVideoUrl = (file) => `${BACKEND}/library/${file}`;
+
+export async function getLibrary() {
+  const res = await fetch(apiUrl("/api/library"));
+  return jsonOrThrow(res);
+}
+
+export async function uploadToLibrary(file) {
+  const fd = new FormData();
+  fd.append("video", file);
+  const res = await fetch(apiUrl("/api/library/upload"), {
+    method: "POST",
+    body: fd,
+  });
+  return jsonOrThrow(res);
+}
+
+export async function updateLibraryTags(id, tags) {
+  const res = await fetch(apiUrl(`/api/library/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function deleteLibraryItem(id) {
+  const res = await fetch(apiUrl(`/api/library/${id}`), { method: "DELETE" });
+  return jsonOrThrow(res);
+}

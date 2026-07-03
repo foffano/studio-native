@@ -12,6 +12,8 @@ import {
   IconMoon,
   IconPlus,
   IconTrash,
+  IconFolder,
+  IconVideo,
 } from "./Icons.jsx";
 
 function updateButtonLabel(status) {
@@ -67,6 +69,25 @@ export default function Sidebar({
           <div className="brand__sub">Gerador de vídeos IA</div>
         </div>
       </div>
+
+      <nav className="nav nav--main">
+        <button
+          className={"nav__item" + (view === "generate" ? " active" : "")}
+          onClick={() => onNavigate("generate")}
+        >
+          <IconVideo />
+          Gerar vídeo
+        </button>
+        <button
+          className={"nav__item" + (view === "library" ? " active" : "")}
+          onClick={() => onNavigate("library")}
+        >
+          <IconFolder />
+          Biblioteca
+        </button>
+      </nav>
+
+      <div className="nav__label">Histórico</div>
 
       <button
         className={

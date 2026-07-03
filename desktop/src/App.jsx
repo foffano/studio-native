@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import GenerateView from "./components/GenerateView.jsx";
+import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
 import { getConfig } from "./api.js";
 
@@ -8,6 +9,7 @@ const THEME_KEY = "studio_native_theme";
 
 const HEADINGS = {
   generate: { eyebrow: "Estúdio", title: "Gerar vídeo" },
+  library: { eyebrow: "Estúdio", title: "Biblioteca de vídeos" },
   settings: { eyebrow: "Configuração", title: "Ajustes" },
 };
 
@@ -20,6 +22,7 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [activeEntry, setActiveEntry] = useState(null);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [libraryPick, setLibraryPick] = useState(null);
   const [updateState, setUpdateState] = useState(null);
 
   useEffect(() => {
@@ -79,6 +82,13 @@ export default function App() {
     if (entryId) setActiveChatId(entryId);
   };
 
+  const handleUseLibrary = (item) => {
+    setLibraryPick(item);
+    setActiveChatId(null);
+    setActiveEntry(null);
+    setView("generate");
+  };
+
   const head = HEADINGS[view] || HEADINGS.generate;
 
   return (
@@ -108,12 +118,18 @@ export default function App() {
               </div>
             </div>
             <GenerateView
-              key={activeChatId || "new"}
+              key={(activeChatId || "new") + (libraryPick?.id || "")}
               config={config}
               activeEntry={activeEntry}
+              libraryPick={libraryPick}
+              onLibraryPickConsumed={() => setLibraryPick(null)}
               onHistoryChange={handleHistoryChange}
             />
           </>
+        )}
+
+        {view === "library" && (
+          <LibraryView onUseForGeneration={handleUseLibrary} />
         )}
 
         {view === "settings" && <SettingsView onSaved={refreshConfig} />}

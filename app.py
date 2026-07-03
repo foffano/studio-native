@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -67,8 +68,13 @@ USER_DATA_DIR = user_data_dir()
 CONFIG_PATH = USER_DATA_DIR / "config.json"
 UPLOAD_DIR = USER_DATA_DIR / "uploads"
 OUTPUT_DIR = USER_DATA_DIR / "outputs"
+LIBRARY_DIR = USER_DATA_DIR / "library"
+LIBRARY_STAGING = USER_DATA_DIR / "library_staging"
+LIBRARY_META_PATH = USER_DATA_DIR / "library.json"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+LIBRARY_STAGING.mkdir(parents=True, exist_ok=True)
 
 # Carrega .env (apenas em dev / compatibilidade) sem sobrescrever o ambiente.
 load_dotenv()
@@ -205,12 +211,153 @@ def _add_cors_headers(resp):
     # (o servidor so escuta em 127.0.0.1).
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
     return resp
 
 # Armazenamento simples de jobs em memoria
 JOBS = {}
 JOBS_LOCK = threading.Lock()
+
+# Biblioteca de videos pre-processados (normalizados e prontos para geracao).
+LIBRARY = {}
+LIBRARY_LOCK = threading.Lock()
+
+
+def _load_library_file():
+    try:
+        data = json.loads(LIBRARY_META_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_library_file():
+    with LIBRARY_LOCK:
+        payload = dict(LIBRARY)
+    LIBRARY_META_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def init_library():
+    global LIBRARY
+    with LIBRARY_LOCK:
+        LIBRARY = _load_library_file()
+
+
+def get_library_item(item_id):
+    with LIBRARY_LOCK:
+        item = LIBRARY.get(item_id)
+        return dict(item) if item else None
+
+
+def set_library_item(item_id, **kwargs):
+    with LIBRARY_LOCK:
+        LIBRARY.setdefault(item_id, {})
+        LIBRARY[item_id].update(kwargs)
+        item = dict(LIBRARY[item_id])
+    _save_library_file()
+    return item
+
+
+def normalize_tags(tags):
+    out = []
+    if not isinstance(tags, list):
+        return out
+    for t in tags:
+        s = str(t or "").strip().lower()
+        if not s or len(s) > 32:
+            continue
+        if s not in out:
+            out.append(s)
+    return out
+
+
+def library_metrics():
+    with LIBRARY_LOCK:
+        items = list(LIBRARY.values())
+    ready = processing = error = 0
+    total_generations = total_outputs = 0
+    tag_counts = {}
+    for it in items:
+        st = it.get("status", "")
+        if st == "ready":
+            ready += 1
+        elif st == "processing":
+            processing += 1
+        elif st == "error":
+            error += 1
+        total_generations += int(it.get("generation_count") or 0)
+        total_outputs += int(it.get("total_outputs") or 0)
+        for tag in it.get("tags") or []:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    return {
+        "total": len(items),
+        "ready": ready,
+        "processing": processing,
+        "error": error,
+        "total_generations": total_generations,
+        "total_outputs": total_outputs,
+        "tag_counts": tag_counts,
+    }
+
+
+def library_record_generation(item_id, num_outputs):
+    with LIBRARY_LOCK:
+        item = LIBRARY.get(item_id)
+        if not item:
+            return
+        item["generation_count"] = int(item.get("generation_count") or 0) + 1
+        item["total_outputs"] = int(item.get("total_outputs") or 0) + int(num_outputs)
+        tags = list(item.get("tags") or [])
+        if "gerado" not in tags:
+            tags.append("gerado")
+        item["tags"] = tags
+        item["last_generated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_library_file()
+
+
+def preprocess_library_item(item_id, src_path):
+    dst_path = LIBRARY_DIR / f"{item_id}.mp4"
+    try:
+        set_library_item(
+            item_id,
+            status="processing",
+            message="Normalizando video (ffmpeg)...",
+            error="",
+        )
+        normalize_video(src_path, dst_path)
+        dur = media_duration(dst_path)
+        size = dst_path.stat().st_size if dst_path.exists() else 0
+        set_library_item(
+            item_id,
+            status="ready",
+            file=f"{item_id}.mp4",
+            message="Pronto para geracao.",
+            error="",
+            processed_at=datetime.now(timezone.utc).isoformat(),
+            duration_sec=round(float(dur or 0), 2),
+            size_bytes=size,
+        )
+    except Exception as e:  # noqa: BLE001
+        set_library_item(
+            item_id,
+            status="error",
+            message="Falha no pre-processamento.",
+            error=str(e),
+        )
+        try:
+            dst_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    finally:
+        try:
+            Path(src_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+init_library()
 
 
 def find_system_font():
@@ -935,17 +1082,40 @@ def render_video(src_path, text, out_path, options, audio_path=None):
         video.close()
 
 
-def process_job(job_id, src_path, num, theme, options, audio_opts=None):
-    norm_path = UPLOAD_DIR / f"{job_id}_norm.mp4"
+def process_job(job_id, src_path, num, theme, options, audio_opts=None, library_id=None):
+    owns_src = bool(src_path)
+    owns_norm = library_id is None
+    norm_path = None
     audio_files = []
+
+    if library_id:
+        item = get_library_item(library_id)
+        if not item or item.get("status") != "ready":
+            set_job(job_id, status="error", message="Video da biblioteca indisponivel.")
+            return
+        norm_path = LIBRARY_DIR / str(item.get("file") or f"{library_id}.mp4")
+        if not norm_path.exists():
+            set_job(job_id, status="error", message="Arquivo da biblioteca nao encontrado.")
+            return
+    else:
+        norm_path = UPLOAD_DIR / f"{job_id}_norm.mp4"
+
     try:
-        set_job(
-            job_id,
-            status="normalizing",
-            message="Normalizando o video (ffmpeg)...",
-            progress=0,
-        )
-        normalize_video(src_path, norm_path)
+        if library_id:
+            set_job(
+                job_id,
+                status="generating_text",
+                message="Usando video pre-processado da biblioteca...",
+                progress=5,
+            )
+        else:
+            set_job(
+                job_id,
+                status="normalizing",
+                message="Normalizando o video (ffmpeg)...",
+                progress=0,
+            )
+            normalize_video(src_path, norm_path)
 
         audio_mode = bool(audio_opts and audio_opts.get("enabled"))
 
@@ -1028,10 +1198,18 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None):
             progress=100,
             results=results,
         )
+        if library_id:
+            library_record_generation(library_id, len(results))
     except Exception as e:  # noqa: BLE001
         set_job(job_id, status="error", message=str(e))
     finally:
-        for p in [src_path, norm_path, *audio_files]:
+        cleanup = []
+        if owns_src and src_path:
+            cleanup.append(src_path)
+        if owns_norm and norm_path:
+            cleanup.append(norm_path)
+        cleanup.extend(audio_files)
+        for p in cleanup:
             try:
                 Path(p).unlink(missing_ok=True)
             except OSError:
@@ -1050,16 +1228,28 @@ def api_health():
 
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
-    if "video" not in request.files:
-        return jsonify({"error": "Nenhum video enviado."}), 400
+    library_id = request.form.get("library_id", "").strip()
+    src_path = None
 
-    file = request.files["video"]
-    if not file.filename:
-        return jsonify({"error": "Arquivo invalido."}), 400
+    if library_id:
+        item = get_library_item(library_id)
+        if not item:
+            return jsonify({"error": "Video da biblioteca nao encontrado."}), 404
+        if item.get("status") != "ready":
+            return jsonify(
+                {"error": "Video ainda em processamento ou com erro. Aguarde ou reenvie."}
+            ), 400
+    else:
+        if "video" not in request.files:
+            return jsonify({"error": "Nenhum video enviado."}), 400
 
-    ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": f"Formato nao suportado: {ext}"}), 400
+        file = request.files["video"]
+        if not file.filename:
+            return jsonify({"error": "Arquivo invalido."}), 400
+
+        ext = Path(file.filename).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            return jsonify({"error": f"Formato nao suportado: {ext}"}), 400
 
     try:
         num = int(request.form.get("num_variations", "1"))
@@ -1149,14 +1339,16 @@ def api_generate():
         )
 
     job_id = uuid.uuid4().hex
-    src_path = UPLOAD_DIR / f"{job_id}{ext}"
-    file.save(str(src_path))
+    if not library_id:
+        src_path = UPLOAD_DIR / f"{job_id}{ext}"
+        file.save(str(src_path))
 
     set_job(job_id, status="queued", message="Na fila...", progress=0, results=[])
 
     thread = threading.Thread(
         target=process_job,
         args=(job_id, src_path, num, theme, options, audio_opts),
+        kwargs={"library_id": library_id or None},
         daemon=True,
     )
     thread.start()
@@ -1175,6 +1367,100 @@ def api_status(job_id):
 @app.route("/outputs/<path:filename>")
 def outputs(filename):
     return send_from_directory(OUTPUT_DIR, filename)
+
+
+@app.route("/library/<path:filename>")
+def library_file(filename):
+    return send_from_directory(LIBRARY_DIR, filename)
+
+
+@app.route("/api/library", methods=["GET"])
+def api_library_list():
+    with LIBRARY_LOCK:
+        items = sorted(
+            (dict(v) for v in LIBRARY.values()),
+            key=lambda x: x.get("created_at") or "",
+            reverse=True,
+        )
+    return jsonify({"items": items, "metrics": library_metrics()})
+
+
+@app.route("/api/library/upload", methods=["POST"])
+def api_library_upload():
+    if "video" not in request.files:
+        return jsonify({"error": "Nenhum video enviado."}), 400
+    file = request.files["video"]
+    if not file.filename:
+        return jsonify({"error": "Arquivo invalido."}), 400
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": f"Formato nao suportado: {ext}"}), 400
+
+    item_id = uuid.uuid4().hex
+    staging = LIBRARY_STAGING / f"{item_id}{ext}"
+    file.save(str(staging))
+
+    now = datetime.now(timezone.utc).isoformat()
+    set_library_item(
+        item_id,
+        id=item_id,
+        name=file.filename,
+        status="processing",
+        message="Na fila de pre-processamento...",
+        error="",
+        tags=[],
+        generation_count=0,
+        total_outputs=0,
+        created_at=now,
+        processed_at="",
+        duration_sec=0,
+        size_bytes=0,
+        file="",
+    )
+
+    thread = threading.Thread(
+        target=preprocess_library_item,
+        args=(item_id, staging),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify({"id": item_id, "item": get_library_item(item_id)})
+
+
+@app.route("/api/library/<item_id>", methods=["GET"])
+def api_library_get(item_id):
+    item = get_library_item(item_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+    return jsonify(item)
+
+
+@app.route("/api/library/<item_id>", methods=["PATCH"])
+def api_library_patch(item_id):
+    item = get_library_item(item_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+    data = request.get_json(silent=True) or {}
+    if "tags" in data:
+        set_library_item(item_id, tags=normalize_tags(data.get("tags")))
+    return jsonify(get_library_item(item_id))
+
+
+@app.route("/api/library/<item_id>", methods=["DELETE"])
+def api_library_delete(item_id):
+    item = get_library_item(item_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+    fname = item.get("file")
+    with LIBRARY_LOCK:
+        LIBRARY.pop(item_id, None)
+    _save_library_file()
+    if fname:
+        try:
+            (LIBRARY_DIR / fname).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return jsonify({"ok": True})
 
 
 @app.route("/api/config")

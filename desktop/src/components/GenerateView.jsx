@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { startGeneration, getStatus, outputUrl } from "../api.js";
+import { startGeneration, getStatus, outputUrl, getLibrary, libraryVideoUrl } from "../api.js";
 import { addEntry } from "../lib/history.js";
 import HeightPicker from "./HeightPicker.jsx";
 import Swatches from "./Swatches.jsx";
@@ -10,6 +10,7 @@ import {
   IconPlus,
   IconMinus,
   IconCheck,
+  IconFolder,
 } from "./Icons.jsx";
 
 const DEFAULTS = {
@@ -42,6 +43,7 @@ function stageIndex(status) {
 
 function metaChips(meta) {
   const chips = [];
+  if (meta.fromLibrary) chips.push("Da biblioteca");
   if (meta.audioEnabled) chips.push("Narração (ElevenLabs)");
   if (meta.theme) chips.push("Tema: " + meta.theme);
   if (meta.audioEnabled && meta.audioTheme)
@@ -53,8 +55,17 @@ function metaChips(meta) {
   return chips;
 }
 
-export default function GenerateView({ config, activeEntry, onHistoryChange }) {
+export default function GenerateView({
+  config,
+  activeEntry,
+  libraryPick,
+  onLibraryPickConsumed,
+  onHistoryChange,
+}) {
+  const [sourceMode, setSourceMode] = useState("upload");
   const [file, setFile] = useState(null);
+  const [libraryItem, setLibraryItem] = useState(null);
+  const [libraryOptions, setLibraryOptions] = useState([]);
   const [drag, setDrag] = useState(false);
   const [opts, setOpts] = useState(DEFAULTS);
   const [audioEnabled, setAudioEnabled] = useState(false);
@@ -82,6 +93,28 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
   }, [config]);
 
   useEffect(() => {
+    if (libraryPick && libraryPick.status === "ready") {
+      setSourceMode("library");
+      setLibraryItem(libraryPick);
+      setFile(null);
+      onLibraryPickConsumed && onLibraryPickConsumed();
+    }
+  }, [libraryPick]);
+
+  useEffect(() => {
+    if (sourceMode !== "library") return;
+    getLibrary()
+      .then((data) => {
+        const ready = (data.items || []).filter((i) => i.status === "ready");
+        setLibraryOptions(ready);
+        if (libraryItem && !ready.some((i) => i.id === libraryItem.id)) {
+          setLibraryItem(ready[0] || null);
+        }
+      })
+      .catch(() => {});
+  }, [sourceMode]);
+
+  useEffect(() => {
     if (activeEntry) {
       setResults(activeEntry.results || []);
       setResultMeta(activeEntry.meta || null);
@@ -105,15 +138,26 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
   useEffect(() => () => clearInterval(pollRef.current), []);
 
   const onFiles = (files) => {
-    if (files && files.length) setFile(files[0]);
+    if (files && files.length) {
+      setFile(files[0]);
+      setSourceMode("upload");
+      setLibraryItem(null);
+    }
   };
+
+  const hasSource =
+    sourceMode === "library" ? !!libraryItem : !!file;
 
   const clampNum = (v) => Math.max(1, Math.min(10, parseInt(v) || 1));
 
   async function start() {
     setError("");
-    if (!file) {
-      setError("Selecione um vídeo primeiro.");
+    if (!hasSource) {
+      setError(
+        sourceMode === "library"
+          ? "Selecione um vídeo da biblioteca."
+          : "Selecione um vídeo primeiro."
+      );
       return;
     }
     let resolvedVoice = null;
@@ -144,8 +188,13 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
       }
     }
 
+    const sourceName =
+      sourceMode === "library" ? libraryItem.name : file.name;
+
     const meta = {
-      sourceName: file.name,
+      sourceName,
+      libraryId: sourceMode === "library" ? libraryItem.id : "",
+      fromLibrary: sourceMode === "library",
       theme: opts.theme.trim(),
       vertical: opts.vertical,
       num: clampNum(opts.num),
@@ -164,7 +213,11 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
     };
 
     const fd = new FormData();
-    fd.append("video", file);
+    if (sourceMode === "library") {
+      fd.append("library_id", libraryItem.id);
+    } else {
+      fd.append("video", file);
+    }
     fd.append("theme", meta.theme);
     fd.append("num_variations", String(meta.num));
     fd.append("font_size", String(meta.fontSize));
@@ -190,7 +243,11 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
     setResultMeta(meta);
     setProgress(4);
     setJobStatus("queued");
-    setStatusMsg("Enviando vídeo...");
+    setStatusMsg(
+      sourceMode === "library"
+        ? "Iniciando com vídeo da biblioteca..."
+        : "Enviando vídeo..."
+    );
 
     try {
       const { job_id } = await startGeneration(fd);
@@ -253,7 +310,11 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
 
       {showStages && (
         <div className={"gen-stages" + (busy ? " gen-stages--live" : "")}>
-          {STAGES.filter((s) => s.key !== "tts" || audioEnabled).map((s, i) => {
+          {STAGES.filter((s) => {
+            if (s.key === "tts" && !audioEnabled) return false;
+            if (s.key === "normalizing" && sourceMode === "library") return false;
+            return true;
+          }).map((s, i) => {
             const done = i < currentStage;
             const active = i === currentStage && busy;
             return (
@@ -285,10 +346,88 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
               Vídeo de origem
             </h3>
             <p className="card__hint">
-              Arraste um arquivo ou clique para selecionar. Suporta MP4, MOV
-              (iPhone HDR), MKV, AVI, WEBM, M4V.
+              Use um vídeo já pré-processado da biblioteca ou envie um arquivo
+              novo. Suporta MP4, MOV (iPhone HDR), MKV, AVI, WEBM, M4V.
             </p>
 
+            <div className="source-tabs">
+              <button
+                type="button"
+                className={"source-tab" + (sourceMode === "library" ? " active" : "")}
+                disabled={busy}
+                onClick={() => setSourceMode("library")}
+              >
+                <IconFolder width={16} height={16} /> Biblioteca
+              </button>
+              <button
+                type="button"
+                className={"source-tab" + (sourceMode === "upload" ? " active" : "")}
+                disabled={busy}
+                onClick={() => setSourceMode("upload")}
+              >
+                <IconUpload width={16} height={16} /> Upload novo
+              </button>
+            </div>
+
+            {sourceMode === "library" ? (
+              <div className="lib-picker">
+                {libraryOptions.length === 0 ? (
+                  <div className="banner banner--warn" style={{ margin: 0 }}>
+                    Nenhum vídeo pronto na biblioteca. Adicione em{" "}
+                    <b>Biblioteca</b> e aguarde o pré-processamento.
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      className="select"
+                      disabled={busy}
+                      value={libraryItem?.id || ""}
+                      onChange={(e) => {
+                        const item = libraryOptions.find(
+                          (i) => i.id === e.target.value
+                        );
+                        setLibraryItem(item || null);
+                      }}
+                    >
+                      <option value="">Selecione um vídeo...</option>
+                      {libraryOptions.map((i) => (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                          {i.generation_count > 0
+                            ? ` · ${i.generation_count} sessões`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {libraryItem && (
+                      <div className="lib-picker__preview">
+                        {libraryItem.file && (
+                          <video
+                            src={libraryVideoUrl(libraryItem.file)}
+                            controls
+                            preload="metadata"
+                          />
+                        )}
+                        <div className="lib-picker__meta">
+                          <span className="filechip">📚 {libraryItem.name}</span>
+                          {(libraryItem.tags || []).map((t) => (
+                            <span className="chip" key={t}>
+                              {t}
+                            </span>
+                          ))}
+                          {libraryItem.generation_count > 0 && (
+                            <span className="chip">
+                              {libraryItem.total_outputs} vídeos gerados
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
             <label
               className={
                 "drop" + (drag ? " drag" : "") + (file ? " has-file" : "")
@@ -313,10 +452,13 @@ export default function GenerateView({ config, activeEntry, onHistoryChange }) {
                 type="file"
                 accept="video/*"
                 hidden
+                disabled={busy}
                 onChange={(e) => onFiles(e.target.files)}
               />
             </label>
             {file && <div className="filechip">🎬 {file.name}</div>}
+              </>
+            )}
 
             <div className="field" style={{ marginTop: 18 }}>
               <label className="field__label">Tema / contexto (opcional)</label>
