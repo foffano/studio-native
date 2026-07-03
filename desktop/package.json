@@ -1,6 +1,6 @@
 {
   "name": "studio-native",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Studio Native - gerador de videos com IA (Electron + React + backend Python)",
   "author": "Studio Native",
   "main": "electron/main.cjs",

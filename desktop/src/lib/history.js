@@ -26,6 +26,28 @@ export function addEntry(entry) {
   return list;
 }
 
+export function upsertEntry(entry) {
+  const list = loadHistory();
+  const idx = list.findIndex((e) => e.id === entry.id);
+  if (idx >= 0) list[idx] = { ...list[idx], ...entry };
+  else list.unshift(entry);
+  saveHistory(list);
+  return list;
+}
+
+export function updateEntry(id, patch) {
+  const list = loadHistory();
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx < 0) return list;
+  list[idx] = { ...list[idx], ...patch };
+  saveHistory(list);
+  return list;
+}
+
+export function getEntry(id) {
+  return loadHistory().find((e) => e.id === id) || null;
+}
+
 export function deleteEntry(id) {
   const list = loadHistory().filter((e) => e.id !== id);
   saveHistory(list);
@@ -38,6 +60,15 @@ export function clearHistory() {
 }
 
 export function getEntryTitle(entry) {
+  if (entry.status === "running") {
+    const theme = (entry.meta?.theme || "").trim();
+    if (theme) {
+      return theme.length > TITLE_MAX
+        ? theme.slice(0, TITLE_MAX) + "…"
+        : theme;
+    }
+    return "Gerando…";
+  }
   const theme = (entry.meta?.theme || "").trim();
   if (theme) {
     return theme.length > TITLE_MAX ? theme.slice(0, TITLE_MAX) + "…" : theme;

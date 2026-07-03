@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { startGeneration, getStatus, outputUrl, getLibrary, libraryVideoUrl } from "../api.js";
-import { addEntry } from "../lib/history.js";
+import { getLibrary, libraryVideoUrl, outputUrl } from "../api.js";
+import { beginGeneration } from "../lib/generationManager.js";
 import HeightPicker from "./HeightPicker.jsx";
 import Swatches from "./Swatches.jsx";
 import {
@@ -41,7 +41,16 @@ function stageIndex(status) {
   return i >= 0 ? i : 0;
 }
 
+function fmtDur(sec) {
+  if (!sec) return "—";
+  const s = Math.round(sec);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m > 0 ? `${m}:${String(r).padStart(2, "0")}` : `${r}s`;
+}
+
 function metaChips(meta) {
+  if (!meta) return [];
   const chips = [];
   if (meta.fromLibrary) chips.push("Da biblioteca");
   if (meta.audioEnabled) chips.push("Narração (ElevenLabs)");
@@ -50,19 +59,151 @@ function metaChips(meta) {
     chips.push("Narração: " + meta.audioTheme);
   chips.push("Altura: " + Math.round((meta.vertical ?? 0.5) * 100) + "%");
   chips.push("Fonte: " + meta.fontSize);
-  chips.push("Contorno: " + meta.strokeWidth);
-  chips.push("Entrelinha: " + Number(meta.lineSpacing).toFixed(2) + "x");
   return chips;
 }
 
 export default function GenerateView({
   config,
   activeEntry,
+  isNewSession,
   libraryPick,
   onLibraryPickConsumed,
-  onHistoryChange,
+  onGenerationStarted,
 }) {
-  const [sourceMode, setSourceMode] = useState("upload");
+  if (!isNewSession && activeEntry) {
+    return <GenerationSession entry={activeEntry} config={config} />;
+  }
+
+  return (
+    <GenerationForm
+      config={config}
+      libraryPick={libraryPick}
+      onLibraryPickConsumed={onLibraryPickConsumed}
+      onGenerationStarted={onGenerationStarted}
+    />
+  );
+}
+
+function GenerationSession({ entry }) {
+  const resultsRef = useRef(null);
+  const prevCount = useRef(entry.results?.length || 0);
+  const meta = entry.meta || {};
+  const busy = entry.status === "running";
+  const error = entry.status === "error" ? entry.error : "";
+  const results = entry.results || [];
+  const sourceMode = meta.fromLibrary ? "library" : "upload";
+  const audioEnabled = !!meta.audioEnabled;
+
+  useEffect(() => {
+    if (results.length > prevCount.current && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    prevCount.current = results.length;
+  }, [results.length]);
+
+  const currentStage = stageIndex(entry.jobStatus || "");
+  const showStages =
+    busy || (entry.jobStatus && entry.status !== "error");
+
+  return (
+    <>
+      {error && <div className="banner banner--error">Erro: {error}</div>}
+
+      <div className="session-head">
+        <span className="filechip">🎬 {meta.sourceName || "Geração"}</span>
+        {busy && (
+          <span className="results-live-badge">
+            <span className="spinner spinner--sm" /> em andamento
+          </span>
+        )}
+      </div>
+
+      {showStages && (
+        <div className={"gen-stages" + (busy ? " gen-stages--live" : "")}>
+          {STAGES.filter((s) => {
+            if (s.key === "tts" && !audioEnabled) return false;
+            if (s.key === "normalizing" && sourceMode === "library") return false;
+            return true;
+          }).map((s, i) => {
+            const done = i < currentStage;
+            const active = i === currentStage && busy;
+            return (
+              <div
+                key={s.key}
+                className={
+                  "gen-stage" +
+                  (done ? " done" : "") +
+                  (active ? " active" : "")
+                }
+              >
+                <span className="gen-stage__dot">
+                  {done ? <IconCheck width={12} height={12} /> : i + 1}
+                </span>
+                <span className="gen-stage__label">{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {busy && (
+        <div className="card progress progress--live" style={{ marginBottom: 18 }}>
+          <div className="progress__msg">
+            <span className="spinner" />
+            {entry.statusMsg || "Gerando..."}
+          </div>
+          <div className="progress__bar">
+            <div
+              className="progress__fill"
+              style={{ width: (entry.progress || 0) + "%" }}
+            />
+          </div>
+          <div className="progress__pct">{Math.round(entry.progress || 0)}%</div>
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <div className="card results-panel" ref={resultsRef}>
+          <h3 className="card__title">
+            Resultados · {results.length}{" "}
+            {results.length === 1 ? "vídeo" : "vídeos"}
+            {busy && (
+              <span className="results-live-badge">
+                <span className="spinner spinner--sm" /> ao vivo
+              </span>
+            )}
+          </h3>
+          <div className="chips">
+            {metaChips(meta).map((c, i) => (
+              <span className="chip" key={i}>
+                {c}
+              </span>
+            ))}
+          </div>
+          <div className="results">
+            {results.map((r, i) => (
+              <ResultCard key={r.file || i} r={r} index={i} isNew={busy} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!busy && results.length === 0 && entry.status === "done" && (
+        <div className="card">
+          <div className="empty">Nenhum resultado nesta geração.</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function GenerationForm({
+  config,
+  libraryPick,
+  onLibraryPickConsumed,
+  onGenerationStarted,
+}) {
+  const [sourceMode, setSourceMode] = useState("library");
   const [file, setFile] = useState(null);
   const [libraryItem, setLibraryItem] = useState(null);
   const [libraryOptions, setLibraryOptions] = useState([]);
@@ -71,17 +212,8 @@ export default function GenerateView({
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [voiceSel, setVoiceSel] = useState("");
   const [audioTheme, setAudioTheme] = useState("");
-
   const [busy, setBusy] = useState(false);
-  const [jobStatus, setJobStatus] = useState("");
-  const [statusMsg, setStatusMsg] = useState("");
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
-  const [results, setResults] = useState([]);
-  const [resultMeta, setResultMeta] = useState(null);
-  const pollRef = useRef(null);
-  const resultsRef = useRef(null);
-  const prevResultCount = useRef(0);
 
   const voices = config?.voices || [];
   const set = (patch) => setOpts((o) => ({ ...o, ...patch }));
@@ -102,40 +234,16 @@ export default function GenerateView({
   }, [libraryPick]);
 
   useEffect(() => {
-    if (sourceMode !== "library") return;
     getLibrary()
       .then((data) => {
         const ready = (data.items || []).filter((i) => i.status === "ready");
         setLibraryOptions(ready);
-        if (libraryItem && !ready.some((i) => i.id === libraryItem.id)) {
-          setLibraryItem(ready[0] || null);
+        if (sourceMode === "library" && !libraryItem && ready.length > 0) {
+          setLibraryItem(ready[0]);
         }
       })
       .catch(() => {});
   }, [sourceMode]);
-
-  useEffect(() => {
-    if (activeEntry) {
-      setResults(activeEntry.results || []);
-      setResultMeta(activeEntry.meta || null);
-      setError("");
-      setBusy(false);
-      setProgress(100);
-      setJobStatus("done");
-    }
-  }, [activeEntry]);
-
-  useEffect(() => {
-    if (
-      results.length > prevResultCount.current &&
-      resultsRef.current
-    ) {
-      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-    prevResultCount.current = results.length;
-  }, [results.length]);
-
-  useEffect(() => () => clearInterval(pollRef.current), []);
 
   const onFiles = (files) => {
     if (files && files.length) {
@@ -145,9 +253,7 @@ export default function GenerateView({
     }
   };
 
-  const hasSource =
-    sourceMode === "library" ? !!libraryItem : !!file;
-
+  const hasSource = sourceMode === "library" ? !!libraryItem : !!file;
   const clampNum = (v) => Math.max(1, Math.min(10, parseInt(v) || 1));
 
   async function start() {
@@ -160,12 +266,11 @@ export default function GenerateView({
       );
       return;
     }
+
     let resolvedVoice = null;
     if (audioEnabled) {
       if (!config?.elevenlabs_available) {
-        setError(
-          "ELEVENLABS_API_KEY não configurada. Configure em Ajustes para usar o modo com áudio."
-        );
+        setError("ELEVENLABS_API_KEY não configurada. Configure em Ajustes.");
         return;
       }
       if (voices.length > 0) {
@@ -183,7 +288,7 @@ export default function GenerateView({
           similarity: v.similarity ?? 0.75,
         };
       } else {
-        setError("Cadastre uma voz em Ajustes > Vozes antes de gerar audio.");
+        setError("Cadastre uma voz em Ajustes > Vozes antes de gerar áudio.");
         return;
       }
     }
@@ -238,65 +343,15 @@ export default function GenerateView({
     }
 
     setBusy(true);
-    setResults([]);
-    prevResultCount.current = 0;
-    setResultMeta(meta);
-    setProgress(4);
-    setJobStatus("queued");
-    setStatusMsg(
-      sourceMode === "library"
-        ? "Iniciando com vídeo da biblioteca..."
-        : "Enviando vídeo..."
-    );
-
     try {
-      const { job_id } = await startGeneration(fd);
-      poll(job_id, meta);
+      const { job_id, entry } = await beginGeneration(fd, meta);
+      onGenerationStarted && onGenerationStarted(job_id, entry);
     } catch (e) {
       setError(e.message);
+    } finally {
       setBusy(false);
     }
   }
-
-  function poll(jobId, meta) {
-    clearInterval(pollRef.current);
-    const tick = async () => {
-      try {
-        const j = await getStatus(jobId);
-        setStatusMsg(j.message || j.status || "");
-        setJobStatus(j.status || "");
-        setProgress(j.progress || 0);
-        if (j.results && j.results.length) setResults(j.results);
-        if (j.status === "done") {
-          clearInterval(pollRef.current);
-          setBusy(false);
-          setProgress(100);
-          const finalResults = j.results || [];
-          setResults(finalResults);
-          addEntry({
-            id: jobId,
-            date: new Date().toISOString(),
-            meta,
-            results: finalResults,
-          });
-          onHistoryChange && onHistoryChange(jobId);
-        } else if (j.status === "error") {
-          clearInterval(pollRef.current);
-          setBusy(false);
-          setError(j.message || "Erro na geração.");
-        }
-      } catch (e) {
-        clearInterval(pollRef.current);
-        setBusy(false);
-        setError("Falha ao consultar status: " + e.message);
-      }
-    };
-    tick();
-    pollRef.current = setInterval(tick, 800);
-  }
-
-  const currentStage = stageIndex(jobStatus);
-  const showStages = busy || (jobStatus && jobStatus !== "error");
 
   return (
     <>
@@ -308,34 +363,6 @@ export default function GenerateView({
       )}
       {error && <div className="banner banner--error">Erro: {error}</div>}
 
-      {showStages && (
-        <div className={"gen-stages" + (busy ? " gen-stages--live" : "")}>
-          {STAGES.filter((s) => {
-            if (s.key === "tts" && !audioEnabled) return false;
-            if (s.key === "normalizing" && sourceMode === "library") return false;
-            return true;
-          }).map((s, i) => {
-            const done = i < currentStage;
-            const active = i === currentStage && busy;
-            return (
-              <div
-                key={s.key}
-                className={
-                  "gen-stage" +
-                  (done ? " done" : "") +
-                  (active ? " active" : "")
-                }
-              >
-                <span className="gen-stage__dot">
-                  {done ? <IconCheck width={12} height={12} /> : i + 1}
-                </span>
-                <span className="gen-stage__label">{s.label}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       <div className="grid grid--2">
         <div>
           <div className="card">
@@ -346,8 +373,8 @@ export default function GenerateView({
               Vídeo de origem
             </h3>
             <p className="card__hint">
-              Use um vídeo já pré-processado da biblioteca ou envie um arquivo
-              novo. Suporta MP4, MOV (iPhone HDR), MKV, AVI, WEBM, M4V.
+              Escolha um vídeo da biblioteca (com miniatura) ou envie um arquivo
+              novo.
             </p>
 
             <div className="source-tabs">
@@ -374,89 +401,82 @@ export default function GenerateView({
                 {libraryOptions.length === 0 ? (
                   <div className="banner banner--warn" style={{ margin: 0 }}>
                     Nenhum vídeo pronto na biblioteca. Adicione em{" "}
-                    <b>Biblioteca</b> e aguarde o pré-processamento.
+                    <b>Biblioteca</b>.
                   </div>
                 ) : (
-                  <>
-                    <select
-                      className="select"
-                      disabled={busy}
-                      value={libraryItem?.id || ""}
-                      onChange={(e) => {
-                        const item = libraryOptions.find(
-                          (i) => i.id === e.target.value
-                        );
-                        setLibraryItem(item || null);
-                      }}
-                    >
-                      <option value="">Selecione um vídeo...</option>
-                      {libraryOptions.map((i) => (
-                        <option key={i.id} value={i.id}>
-                          {i.name}
-                          {i.generation_count > 0
-                            ? ` · ${i.generation_count} sessões`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                    {libraryItem && (
-                      <div className="lib-picker__preview">
-                        {libraryItem.file && (
-                          <video
-                            src={libraryVideoUrl(libraryItem.file)}
-                            controls
-                            preload="metadata"
-                          />
-                        )}
-                        <div className="lib-picker__meta">
-                          <span className="filechip">📚 {libraryItem.name}</span>
-                          {(libraryItem.tags || []).map((t) => (
-                            <span className="chip" key={t}>
-                              {t}
-                            </span>
-                          ))}
-                          {libraryItem.generation_count > 0 && (
-                            <span className="chip">
-                              {libraryItem.total_outputs} vídeos gerados
-                            </span>
+                  <div className="lib-source-list">
+                    {libraryOptions.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={
+                          "lib-source-item" +
+                          (libraryItem?.id === item.id ? " active" : "")
+                        }
+                        disabled={busy}
+                        onClick={() => setLibraryItem(item)}
+                      >
+                        <div className="lib-source-item__thumb">
+                          {item.file ? (
+                            <video
+                              src={libraryVideoUrl(item.file)}
+                              muted
+                              preload="metadata"
+                            />
+                          ) : null}
+                        </div>
+                        <div className="lib-source-item__info">
+                          <div className="lib-source-item__name">{item.name}</div>
+                          <div className="lib-source-item__meta">
+                            {fmtDur(item.duration_sec)}
+                            {item.generation_count > 0 &&
+                              ` · ${item.generation_count} sessões · ${item.total_outputs} vídeos`}
+                          </div>
+                          {(item.tags || []).length > 0 && (
+                            <div className="lib-source-item__tags">
+                              {item.tags.slice(0, 3).map((t) => (
+                                <span className="chip" key={t}>
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </div>
-                      </div>
-                    )}
-                  </>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             ) : (
               <>
-            <label
-              className={
-                "drop" + (drag ? " drag" : "") + (file ? " has-file" : "")
-              }
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDrag(true);
-              }}
-              onDragLeave={() => setDrag(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDrag(false);
-                onFiles(e.dataTransfer.files);
-              }}
-            >
-              <div className="drop__icon">
-                <IconUpload width={26} height={26} />
-              </div>
-              <div className="drop__title">Solte o vídeo aqui</div>
-              <div style={{ fontSize: 12 }}>ou clique para escolher</div>
-              <input
-                type="file"
-                accept="video/*"
-                hidden
-                disabled={busy}
-                onChange={(e) => onFiles(e.target.files)}
-              />
-            </label>
-            {file && <div className="filechip">🎬 {file.name}</div>}
+                <label
+                  className={
+                    "drop" + (drag ? " drag" : "") + (file ? " has-file" : "")
+                  }
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDrag(true);
+                  }}
+                  onDragLeave={() => setDrag(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDrag(false);
+                    onFiles(e.dataTransfer.files);
+                  }}
+                >
+                  <div className="drop__icon">
+                    <IconUpload width={26} height={26} />
+                  </div>
+                  <div className="drop__title">Solte o vídeo aqui</div>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    hidden
+                    disabled={busy}
+                    onChange={(e) => onFiles(e.target.files)}
+                  />
+                </label>
+                {file && <div className="filechip">🎬 {file.name}</div>}
               </>
             )}
 
@@ -464,14 +484,11 @@ export default function GenerateView({
               <label className="field__label">Tema / contexto (opcional)</label>
               <textarea
                 className="textarea"
-                placeholder="Ex.: promoção relâmpago de tênis, humor, curiosidades..."
+                placeholder="Ex.: promoção relâmpago de tênis, humor..."
                 value={opts.theme}
                 onChange={(e) => set({ theme: e.target.value })}
                 disabled={busy}
               />
-              <div className="field__hint">
-                Apenas texto é enviado à OpenRouter — o vídeo nunca sai do seu PC.
-              </div>
             </div>
 
             <div className="grid2">
@@ -497,9 +514,7 @@ export default function GenerateView({
                     <IconPlus width={16} height={16} />
                   </button>
                 </div>
-                <div className="field__hint">1 a 10 vídeos, frases diferentes.</div>
               </div>
-
               <div className="field">
                 <label className="field__label">Altura da frase</label>
                 <HeightPicker
@@ -515,9 +530,9 @@ export default function GenerateView({
               <span className="dot">
                 <IconMic width={18} height={18} />
               </span>
-              Narração por voz (ElevenLabs)
+              Narração (ElevenLabs)
             </h3>
-            <label className="toggle" style={{ marginBottom: 6 }}>
+            <label className="toggle">
               <input
                 type="checkbox"
                 checked={audioEnabled}
@@ -527,69 +542,32 @@ export default function GenerateView({
               <span className="toggle__track" />
               <span>Gerar áudio (narração por voz)</span>
             </label>
-
-            {audioEnabled && !config?.elevenlabs_available && (
-              <div className="banner banner--warn" style={{ marginTop: 12 }}>
-                ELEVENLABS_API_KEY não configurada. Adicione em <b>Ajustes</b>.
+            {audioEnabled && voices.length > 0 && (
+              <div className="field" style={{ marginTop: 14 }}>
+                <label className="field__label">Voz</label>
+                <select
+                  className="select"
+                  value={voiceSel}
+                  disabled={busy}
+                  onChange={(e) => setVoiceSel(e.target.value)}
+                >
+                  {voices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
-
             {audioEnabled && (
-              <div style={{ marginTop: 14 }}>
-                {voices.length > 0 ? (
-                  <div className="field">
-                    <label className="field__label">Voz</label>
-                    <select
-                      className="select"
-                      value={voiceSel}
-                      disabled={busy}
-                      onChange={(e) => setVoiceSel(e.target.value)}
-                    >
-                      {voices.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
-                    {(() => {
-                      const v = voices.find((x) => x.id === voiceSel);
-                      if (!v) return null;
-                      return (
-                        <div className="voice-select-info">
-                          Voice ID: {v.voice_id}
-                          {v.model_id ? ` · ${v.model_id}` : ""} · stab{" "}
-                          {(v.stability ?? 0.5).toFixed(2)} · sim{" "}
-                          {(v.similarity ?? 0.75).toFixed(2)}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <div className="banner banner--warn">
-                    Nenhuma voz cadastrada. Vá em <b>Ajustes &gt; Vozes</b> para
-                    cadastrar suas vozes da ElevenLabs antes de gerar áudio.
-                  </div>
-                )}
-
-                <div className="field">
-                  <label className="field__label">
-                    Tema / contexto da narração (opcional)
-                  </label>
-                  <input
-                    className="input"
-                    placeholder="Roteiro da fala (separado do tema da frase)"
-                    value={audioTheme}
-                    disabled={busy}
-                    onChange={(e) => setAudioTheme(e.target.value)}
-                  />
-                </div>
-
-                <div className="field__hint">
-                  Os parâmetros avançados (modelo, estabilidade, similaridade)
-                  vêm da voz cadastrada em Ajustes. A narração é dimensionada
-                  para a duração do vídeo + 10s; se for mais longa, o último
-                  frame é congelado.
-                </div>
+              <div className="field">
+                <label className="field__label">Tema da narração (opcional)</label>
+                <input
+                  className="input"
+                  value={audioTheme}
+                  disabled={busy}
+                  onChange={(e) => setAudioTheme(e.target.value)}
+                />
               </div>
             )}
           </div>
@@ -601,10 +579,7 @@ export default function GenerateView({
             <div className="grid2">
               <div className="field">
                 <label className="field__label">Cor do texto</label>
-                <Swatches
-                  value={opts.color}
-                  onChange={(c) => set({ color: c })}
-                />
+                <Swatches value={opts.color} onChange={(c) => set({ color: c })} />
               </div>
               <div className="field">
                 <label className="field__label">Cor do contorno</label>
@@ -614,7 +589,6 @@ export default function GenerateView({
                 />
               </div>
             </div>
-
             <div className="grid2">
               <div className="field">
                 <label className="field__label">Tamanho da fonte</label>
@@ -641,7 +615,6 @@ export default function GenerateView({
                 />
               </div>
             </div>
-
             <div className="grid2">
               <div className="field">
                 <label className="field__label">FPS</label>
@@ -681,55 +654,11 @@ export default function GenerateView({
               disabled={busy}
               onClick={start}
             >
-              {busy ? "Gerando..." : "Gerar vídeos"}
+              {busy ? "Iniciando..." : "Gerar vídeos"}
             </button>
-
-            {busy && (
-              <div className="progress progress--live">
-                <div className="progress__msg">
-                  <span className="spinner" />
-                  {statusMsg}
-                </div>
-                <div className="progress__bar">
-                  <div
-                    className="progress__fill"
-                    style={{ width: progress + "%" }}
-                  />
-                </div>
-                <div className="progress__pct">{Math.round(progress)}%</div>
-              </div>
-            )}
           </div>
         </div>
       </div>
-
-      {results.length > 0 && (
-        <div className="card results-panel" ref={resultsRef} style={{ marginTop: 18 }}>
-          <h3 className="card__title">
-            Resultados · {results.length}{" "}
-            {results.length === 1 ? "vídeo" : "vídeos"}
-            {busy && (
-              <span className="results-live-badge">
-                <span className="spinner spinner--sm" /> ao vivo
-              </span>
-            )}
-          </h3>
-          {resultMeta && (
-            <div className="chips">
-              {metaChips(resultMeta).map((c, i) => (
-                <span className="chip" key={i}>
-                  {c}
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="results">
-            {results.map((r, i) => (
-              <ResultCard key={r.file || i} r={r} index={i} isNew={busy} />
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }

@@ -110,12 +110,20 @@ export default function Sidebar({
                 "chat-item" +
                 (activeChatId === entry.id && view === "generate"
                   ? " active"
-                  : "")
+                  : "") +
+                (entry.status === "running" ? " chat-item--running" : "")
               }
               onClick={() => onSelectChat(entry)}
               title={getEntryTitle(entry)}
             >
-              <span className="chat-item__title">{getEntryTitle(entry)}</span>
+              <span className="chat-item__title">
+                {entry.status === "running" && (
+                  <span className="chat-item__spin">
+                    <span className="spinner spinner--sm" />
+                  </span>
+                )}
+                {getEntryTitle(entry)}
+              </span>
               <span className="chat-item__meta">
                 <span className="chat-item__date">
                   {formatHistoryDate(entry.date)}

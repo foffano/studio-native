@@ -4,6 +4,11 @@ import GenerateView from "./components/GenerateView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
 import { getConfig } from "./api.js";
+import { getEntry } from "./lib/history.js";
+import {
+  subscribeGeneration,
+  resumeRunningGenerations,
+} from "./lib/generationManager.js";
 
 const THEME_KEY = "studio_native_theme";
 
@@ -40,6 +45,8 @@ export default function App() {
 
   useEffect(() => {
     refreshConfig();
+    resumeRunningGenerations();
+    return subscribeGeneration(() => setHistoryVersion((v) => v + 1));
   }, []);
 
   useEffect(() => {
@@ -49,6 +56,11 @@ export default function App() {
     const unsubscribe = updates.onState(setUpdateState);
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (activeChatId) setActiveEntry(getEntry(activeChatId));
+    else setActiveEntry(null);
+  }, [activeChatId, historyVersion]);
 
   const updateAction = async (action) => {
     const updates = window.studioNative?.updates;
@@ -73,13 +85,15 @@ export default function App() {
 
   const handleSelectChat = (entry) => {
     setActiveChatId(entry.id);
-    setActiveEntry(entry);
+    setActiveEntry(getEntry(entry.id) || entry);
     setView("generate");
   };
 
-  const handleHistoryChange = (entryId) => {
+  const handleGenerationStarted = (jobId, entry) => {
+    setActiveChatId(jobId);
+    setActiveEntry(entry);
+    setView("generate");
     setHistoryVersion((v) => v + 1);
-    if (entryId) setActiveChatId(entryId);
   };
 
   const handleUseLibrary = (item) => {
@@ -118,12 +132,12 @@ export default function App() {
               </div>
             </div>
             <GenerateView
-              key={(activeChatId || "new") + (libraryPick?.id || "")}
               config={config}
               activeEntry={activeEntry}
+              isNewSession={!activeChatId}
               libraryPick={libraryPick}
               onLibraryPickConsumed={() => setLibraryPick(null)}
-              onHistoryChange={handleHistoryChange}
+              onGenerationStarted={handleGenerationStarted}
             />
           </>
         )}
