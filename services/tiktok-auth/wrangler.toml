@@ -3,11 +3,12 @@ main = "src/worker.js"
 compatibility_date = "2026-08-01"
 
 # Subdomínio dedicado: nada aqui toca o apex toffa.com.br, que já está em uso.
-# O registro DNS de auth. é criado pelo próprio wrangler no deploy (proxied).
+# custom_domain = true é o que faz o wrangler criar o registro DNS de auth.
+# sozinho no deploy. Com uma rota comum (custom_domain = false) o DNS teria de
+# existir antes, senão o hostname simplesmente não resolve.
 [[routes]]
-pattern = "auth.toffa.com.br/*"
-zone_name = "toffa.com.br"
-custom_domain = false
+pattern = "auth.toffa.com.br"
+custom_domain = true
 
 # TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET NÃO ficam aqui.
 # São secrets, definidos por linha de comando:

@@ -38,8 +38,12 @@ o app desktop, não um navegador.
 
 ## Deploy
 
-Pré-requisito: a zona `toffa.com.br` na sua conta Cloudflare. O deploy cria o
-registro DNS de `auth.` sozinho e não encosta no apex, que já está em uso.
+Pré-requisito: a zona `toffa.com.br` na sua conta Cloudflare. A rota está
+declarada como `custom_domain = true` — é isso que faz o wrangler criar o
+registro DNS de `auth.` sozinho no deploy. Uma rota comum exigiria que o DNS já
+existisse, e sem ele o hostname simplesmente não resolve, mesmo com o Worker
+publicado. Nada disso encosta no apex, que já está em uso (inclusive pelo
+e-mail no iCloud).
 
 ```bash
 cd services/tiktok-auth
