@@ -3,14 +3,36 @@ import Sidebar from "./components/Sidebar.jsx";
 import GenerateView from "./components/GenerateView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
-import { getConfig } from "./api.js";
-import { getEntry } from "./lib/history.js";
+import { getConfig, importHistoryToBackend } from "./api.js";
+import { getEntry, loadHistory } from "./lib/history.js";
 import {
   subscribeGeneration,
   resumeRunningGenerations,
 } from "./lib/generationManager.js";
 
 const THEME_KEY = "studio_native_theme";
+const MIGRATED_KEY = "studio_native_history_migrated_v1";
+
+/** Manda para o backend o histórico que vivia só no localStorage.
+ *
+ * Antes do catálogo de produção, o backend não sabia quais vídeos ele mesmo
+ * tinha gerado. Isso roda uma vez por instalação; o endpoint é idempotente e
+ * ignora entradas cujo arquivo já não existe.
+ */
+async function migrateHistoryOnce() {
+  if (localStorage.getItem(MIGRATED_KEY)) return;
+  const entries = loadHistory().filter((e) => (e.results || []).length > 0);
+  if (!entries.length) {
+    localStorage.setItem(MIGRATED_KEY, "1");
+    return;
+  }
+  try {
+    await importHistoryToBackend(entries);
+    localStorage.setItem(MIGRATED_KEY, "1");
+  } catch (_) {
+    // Backend ainda subindo: tenta de novo na próxima abertura.
+  }
+}
 
 const HEADINGS = {
   generate: { eyebrow: "Estúdio", title: "Gerar vídeo" },
@@ -45,6 +67,7 @@ export default function App() {
 
   useEffect(() => {
     refreshConfig();
+    migrateHistoryOnce();
     resumeRunningGenerations();
     return subscribeGeneration(() => setHistoryVersion((v) => v + 1));
   }, []);

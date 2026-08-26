@@ -30,6 +30,9 @@ from moviepy import (
     concatenate_videoclips,
 )
 
+import captions as cap
+import store
+
 # ---------------------------------------------------------------------------
 # Resolucao de caminhos (suporta execucao normal e empacotada com PyInstaller).
 # ---------------------------------------------------------------------------
@@ -72,6 +75,7 @@ OUTPUT_DIR = USER_DATA_DIR / "outputs"
 LIBRARY_DIR = USER_DATA_DIR / "library"
 LIBRARY_STAGING = USER_DATA_DIR / "library_staging"
 LIBRARY_META_PATH = USER_DATA_DIR / "library.json"
+STUDIO_DB_PATH = USER_DATA_DIR / "studio.db"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
@@ -426,6 +430,7 @@ def recover_library_on_startup():
 
 
 init_library()
+store.init_store(STUDIO_DB_PATH)
 recover_library_on_startup()
 
 
@@ -786,10 +791,12 @@ def get_job(job_id):
         return dict(JOBS.get(job_id, {}))
 
 
-def generate_phrases(n, theme):
-    """Chama a OpenRouter SOMENTE com texto e retorna uma lista de n frases.
+def generate_phrases(n, theme, extra_tags=None):
+    """Chama a OpenRouter SOMENTE com texto e retorna n itens prontos para o post.
 
-    O video NUNCA e enviado para a API - apenas o prompt de texto abaixo.
+    Cada item traz a frase da tela, a legenda do post e as hashtags - tudo na
+    mesma chamada, para a legenda ficar coerente com a frase sem custar um
+    segundo request. O video NUNCA e enviado para a API.
     """
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
@@ -804,69 +811,95 @@ def generate_phrases(n, theme):
 
     system_prompt = (
         "Voce e um redator de copy para videos curtos virais (TikTok/Reels/Shorts). "
-        "Gere frases curtas, impactantes e em portugues do Brasil, prontas para serem "
-        "sobrepostas no video. Pode usar 1 ou 2 emojis quando fizer sentido. "
-        "Cada frase deve ter no maximo 120 caracteres."
+        "Escreve em portugues do Brasil, com frases curtas e impactantes, prontas "
+        "para serem sobrepostas no video, e legendas de post que dao vontade de "
+        "assistir ate o fim."
     )
 
     user_prompt = (
         f"{theme_part}\n\n"
-        f"Gere exatamente {n} frases DIFERENTES entre si.\n"
+        f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
+        '- "overlay": a frase que fica NA TELA do video, no maximo 120 caracteres '
+        "(pode usar 1 ou 2 emojis);\n"
+        '- "caption": a legenda do post, curta, no maximo 150 caracteres, '
+        "SEM hashtags dentro dela;\n"
+        f'- "hashtags": no maximo {cap.MAX_HASHTAGS} hashtags relevantes, sem o '
+        "simbolo #, sem espacos e sem acentos.\n\n"
         "Responda APENAS com um JSON valido no formato: "
-        '{"frases": ["frase 1", "frase 2", ...]}. '
+        '{"itens": [{"overlay": "...", "caption": "...", "hashtags": ["..."]}]}. '
         "Nao inclua explicacoes, numeracao ou texto fora do JSON."
     )
 
-    payload = {
-        "model": OPENROUTER_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.9,
-        "response_format": {"type": "json_object"},
-    }
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost",
-        "X-Title": "IA Video Generator",
-    }
-
-    resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=120)
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Erro da OpenRouter ({resp.status_code}): {resp.text[:300]}"
-        )
-
-    content = resp.json()["choices"][0]["message"]["content"]
-    phrases = parse_phrases(content, n)
-    if not phrases:
+    content = _openrouter_chat(system_prompt, user_prompt)
+    items = parse_phrases(content, n)
+    if not items:
         raise RuntimeError("A IA nao retornou frases validas.")
-    return phrases[:n]
+
+    for item in items:
+        item["caption"], item["hashtags"] = cap.finalize(
+            item.get("caption"),
+            item.get("hashtags"),
+            phrase=item.get("overlay", ""),
+            theme=theme,
+            extra_tags=extra_tags,
+        )
+    return items[:n]
 
 
 def parse_phrases(content, n):
-    """Extrai a lista de frases da resposta da IA, de forma tolerante."""
-    content = content.strip()
-    # Tenta extrair bloco JSON
+    """Extrai [{overlay, caption, hashtags}] da resposta da IA, de forma tolerante.
+
+    Aceita tanto o formato novo quanto o antigo ({"frases": [...]}) e, em ultimo
+    caso, linhas soltas - a legenda entra vazia e o fallback preenche depois.
+    """
+    content = (content or "").strip()
+    items = []
+
     match = re.search(r"\{.*\}", content, re.DOTALL)
     if match:
         try:
             data = json.loads(match.group(0))
-            frases = data.get("frases") or data.get("phrases")
-            if isinstance(frases, list):
-                return [str(f).strip() for f in frases if str(f).strip()]
         except json.JSONDecodeError:
-            pass
-    # Fallback: divide por linhas
-    lines = [
-        re.sub(r"^\s*[\d\-\.\)\"]+\s*", "", ln).strip().strip('"')
-        for ln in content.splitlines()
-        if ln.strip()
-    ]
-    return [ln for ln in lines if ln][:n]
+            data = None
+        if isinstance(data, dict):
+            raw = data.get("itens") or data.get("items")
+            if isinstance(raw, list):
+                for it in raw:
+                    if not isinstance(it, dict):
+                        continue
+                    overlay = str(
+                        it.get("overlay") or it.get("frase") or it.get("phrase") or ""
+                    ).strip()
+                    if not overlay:
+                        continue
+                    items.append(
+                        {
+                            "overlay": overlay,
+                            "caption": str(it.get("caption") or it.get("legenda") or ""),
+                            "hashtags": it.get("hashtags") or it.get("tags") or [],
+                        }
+                    )
+            if not items:
+                # Formato antigo: {"frases": ["...", "..."]}
+                frases = data.get("frases") or data.get("phrases")
+                if isinstance(frases, list):
+                    items = [
+                        {"overlay": str(f).strip(), "caption": "", "hashtags": []}
+                        for f in frases
+                        if str(f).strip()
+                    ]
+
+    if not items:
+        lines = [
+            re.sub(r"^\s*[\d\-\.\)\"]+\s*", "", ln).strip().strip('"')
+            for ln in content.splitlines()
+            if ln.strip()
+        ]
+        items = [
+            {"overlay": ln, "caption": "", "hashtags": []} for ln in lines if ln
+        ]
+
+    return items[:n]
 
 
 def media_duration(path):
@@ -924,8 +957,8 @@ def words_target_for_duration(duration):
     return max(6, int(duration * WORDS_PER_SECOND * 0.85))
 
 
-def generate_overlay_and_speech(n, theme, video_duration):
-    """Gera n pares coerentes (overlay curto na tela + speech para narracao),
+def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None):
+    """Gera n itens coerentes (overlay na tela + narracao + legenda do post),
     usando tecnicas de videos virais de TikTok e respeitando o limite de
     palavras compativel com a duracao do video. So texto vai para a IA."""
     # Alvo de palavras baseado na duracao do video + 10s (a montagem estende o
@@ -953,9 +986,14 @@ def generate_overlay_and_speech(n, theme, video_duration):
         "(maximo ~8 palavras, pode usar 1 emoji);\n"
         "- \"speech\": o texto da NARRACAO falada, coerente com a overlay, "
         f"com no MAXIMO {words_max} palavras para caber em ~{budget_duration:.0f}s "
-        "(ritmo de fala natural). NAO use emojis na speech.\n\n"
+        "(ritmo de fala natural). NAO use emojis na speech;\n"
+        "- \"caption\": a legenda do post, curta, no maximo 150 caracteres, "
+        "SEM hashtags dentro dela;\n"
+        f"- \"hashtags\": no maximo {cap.MAX_HASHTAGS} hashtags relevantes, sem o "
+        "simbolo #, sem espacos e sem acentos.\n\n"
         "Responda APENAS com JSON valido no formato: "
-        '{"itens": [{"overlay": "...", "speech": "..."}, ...]}. '
+        '{"itens": [{"overlay": "...", "speech": "...", "caption": "...", '
+        '"hashtags": ["..."]}]}. '
         "Sem explicacoes nem texto fora do JSON."
     )
 
@@ -963,11 +1001,20 @@ def generate_overlay_and_speech(n, theme, video_duration):
     items = parse_overlay_speech(content, n)
     if not items:
         raise RuntimeError("A IA nao retornou overlay/speech validos.")
+
+    for item in items:
+        item["caption"], item["hashtags"] = cap.finalize(
+            item.get("caption"),
+            item.get("hashtags"),
+            phrase=item.get("overlay", ""),
+            theme=theme,
+            extra_tags=extra_tags,
+        )
     return items[:n]
 
 
 def parse_overlay_speech(content, n):
-    """Extrai a lista [{overlay, speech}] da resposta da IA, de forma tolerante."""
+    """Extrai [{overlay, speech, caption, hashtags}] da resposta da IA."""
     content = (content or "").strip()
     match = re.search(r"\{.*\}", content, re.DOTALL)
     data = None
@@ -990,6 +1037,8 @@ def parse_overlay_speech(content, n):
                         {
                             "overlay": overlay or speech,
                             "speech": speech or overlay,
+                            "caption": str(it.get("caption") or it.get("legenda") or ""),
+                            "hashtags": it.get("hashtags") or it.get("tags") or [],
                         }
                     )
     return items[:n]
@@ -1151,7 +1200,8 @@ def render_video(src_path, text, out_path, options, audio_path=None):
         video.close()
 
 
-def process_job(job_id, src_path, num, theme, options, audio_opts=None, library_id=None):
+def process_job(job_id, src_path, num, theme, options, audio_opts=None,
+                library_id=None, source_name=""):
     owns_src = bool(src_path)
     owns_norm = library_id is None
     norm_path = None
@@ -1187,16 +1237,22 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None, library_
             normalize_video(src_path, norm_path)
 
         audio_mode = bool(audio_opts and audio_opts.get("enabled"))
+        # As tags do video-fonte alimentam o fallback de hashtags quando a IA
+        # nao devolve nenhuma.
+        lib_item = get_library_item(library_id) if library_id else None
+        extra_tags = list((lib_item or {}).get("tags") or [])
 
         if audio_mode:
             video_dur = media_duration(norm_path)
             set_job(
                 job_id,
                 status="generating_text",
-                message="Gerando roteiro (overlay + narracao) com a IA...",
+                message="Gerando roteiro, narracao e legenda com a IA...",
             )
             audio_theme = audio_opts.get("theme") or theme
-            items = generate_overlay_and_speech(num, audio_theme, video_dur)
+            items = generate_overlay_and_speech(
+                num, audio_theme, video_dur, extra_tags=extra_tags
+            )
 
             results = []
             total = len(items)
@@ -1229,10 +1285,26 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None, library_
                 render_video(
                     norm_path, item["overlay"], out_path, options, audio_path=audio_path
                 )
+                record = store.add_output(
+                    file=out_name,
+                    job_id=job_id,
+                    library_id=library_id or "",
+                    phrase=item["overlay"],
+                    speech=item["speech"],
+                    caption=item.get("caption", ""),
+                    hashtags=item.get("hashtags", []),
+                    theme=audio_theme,
+                    source_name=source_name,
+                    duration=media_duration(out_path),
+                    audio_mode=True,
+                )
                 results.append(
                     {
+                        "id": record["id"],
                         "phrase": item["overlay"],
                         "speech": item["speech"],
+                        "caption": record["caption"],
+                        "hashtags": record["hashtags"],
                         "file": out_name,
                     }
                 )
@@ -1241,13 +1313,14 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None, library_
             set_job(
                 job_id,
                 status="generating_text",
-                message="Gerando frases com a IA...",
+                message="Gerando frases e legendas com a IA...",
             )
-            phrases = generate_phrases(num, theme)
+            phrases = generate_phrases(num, theme, extra_tags=extra_tags)
 
             results = []
             total = len(phrases)
-            for i, phrase in enumerate(phrases, start=1):
+            for i, item in enumerate(phrases, start=1):
+                phrase = item["overlay"]
                 set_job(
                     job_id,
                     status="rendering",
@@ -1257,7 +1330,26 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None, library_
                 out_name = f"{job_id}_{i}.mp4"
                 out_path = OUTPUT_DIR / out_name
                 render_video(norm_path, phrase, out_path, options)
-                results.append({"phrase": phrase, "file": out_name})
+                record = store.add_output(
+                    file=out_name,
+                    job_id=job_id,
+                    library_id=library_id or "",
+                    phrase=phrase,
+                    caption=item.get("caption", ""),
+                    hashtags=item.get("hashtags", []),
+                    theme=theme,
+                    source_name=source_name,
+                    duration=media_duration(out_path),
+                )
+                results.append(
+                    {
+                        "id": record["id"],
+                        "phrase": phrase,
+                        "caption": record["caption"],
+                        "hashtags": record["hashtags"],
+                        "file": out_name,
+                    }
+                )
                 set_job(job_id, results=results, progress=int(i / total * 100))
 
         set_job(
@@ -1408,7 +1500,10 @@ def api_generate():
         )
 
     job_id = uuid.uuid4().hex
-    if not library_id:
+    if library_id:
+        source_name = str((get_library_item(library_id) or {}).get("name") or "")
+    else:
+        source_name = file.filename or ""
         src_path = UPLOAD_DIR / f"{job_id}{ext}"
         file.save(str(src_path))
 
@@ -1417,7 +1512,7 @@ def api_generate():
     thread = threading.Thread(
         target=process_job,
         args=(job_id, src_path, num, theme, options, audio_opts),
-        kwargs={"library_id": library_id or None},
+        kwargs={"library_id": library_id or None, "source_name": source_name},
         daemon=True,
     )
     thread.start()
@@ -1443,6 +1538,98 @@ def library_file(filename):
     return send_from_directory(LIBRARY_DIR, filename)
 
 
+# ---------------------------------------------------------------------------
+# Catalogo de producao: os videos que o app gerou, com legenda e hashtags.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/outputs", methods=["GET"])
+def api_outputs_list():
+    items = store.list_outputs(
+        status=request.args.get("status") or None,
+        library_id=request.args.get("library_id") or None,
+        job_id=request.args.get("job_id") or None,
+        search=request.args.get("q") or None,
+        limit=int(request.args.get("limit", 200)),
+        offset=int(request.args.get("offset", 0)),
+    )
+    return jsonify({"items": items, "metrics": store.metrics()})
+
+
+@app.route("/api/outputs/<output_id>", methods=["GET"])
+def api_output_get(output_id):
+    item = store.get_output(output_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+    return jsonify(item)
+
+
+@app.route("/api/outputs/<output_id>", methods=["PATCH"])
+def api_output_patch(output_id):
+    if not store.get_output(output_id):
+        return jsonify({"error": "Video nao encontrado."}), 404
+    data = request.get_json(silent=True) or {}
+    fields = {}
+    if "caption" in data:
+        fields["caption"] = cap.clean_caption(data.get("caption"))
+    if "hashtags" in data:
+        # O limite de 5 e do backend: a UI pode sugerir, mas nao decide.
+        fields["hashtags"] = cap.normalize_hashtags(data.get("hashtags"))
+    if "status" in data:
+        fields["status"] = str(data.get("status") or "pronto")
+    return jsonify(store.update_output(output_id, **fields))
+
+
+@app.route("/api/outputs/<output_id>", methods=["DELETE"])
+def api_output_delete(output_id):
+    item = store.delete_output(output_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+    try:
+        (OUTPUT_DIR / item["file"]).unlink(missing_ok=True)
+    except OSError:
+        pass
+    return jsonify({"ok": True})
+
+
+@app.route("/api/outputs/<output_id>/caption", methods=["POST"])
+def api_output_caption_regenerate(output_id):
+    """Gera outra legenda para um video ja renderizado, sem re-renderizar."""
+    item = store.get_output(output_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+
+    lib_item = get_library_item(item.get("library_id")) if item.get("library_id") else None
+    extra_tags = list((lib_item or {}).get("tags") or [])
+    try:
+        variants = generate_phrases(1, item.get("theme") or item.get("phrase"), extra_tags)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e)}), 502
+
+    fresh = variants[0]
+    updated = store.update_output(
+        output_id, caption=fresh["caption"], hashtags=fresh["hashtags"]
+    )
+    return jsonify(updated)
+
+
+@app.route("/api/outputs/import", methods=["POST"])
+def api_outputs_import():
+    """Migra o historico que vivia no localStorage do React para o catalogo.
+
+    Idempotente: roda quantas vezes quiser, so importa o que ainda nao existe e
+    cujo arquivo continua em outputs/.
+    """
+    data = request.get_json(silent=True) or {}
+    existing = {p.name for p in OUTPUT_DIR.glob("*.mp4")}
+    result = store.import_history(data.get("entries") or [], existing)
+    return jsonify(result)
+
+
+@app.route("/api/metrics", methods=["GET"])
+def api_metrics():
+    return jsonify(store.metrics())
+
+
 @app.route("/api/library", methods=["GET"])
 def api_library_list():
     with LIBRARY_LOCK:
@@ -1451,7 +1638,14 @@ def api_library_list():
             key=lambda x: x.get("created_at") or "",
             reverse=True,
         )
-    return jsonify({"items": items, "metrics": library_metrics()})
+    counts = store.counts_by_library()
+    for item in items:
+        c = counts.get(item.get("id")) or {}
+        item["produced_count"] = c.get("produced", 0)
+        item["published_count"] = c.get("published", 0)
+    metrics = library_metrics()
+    metrics.update(store.metrics())
+    return jsonify({"items": items, "metrics": metrics})
 
 
 @app.route("/api/library/upload", methods=["POST"])

@@ -1469,3 +1469,124 @@ input[type="range"] {
   margin-top: 6px;
   word-break: break-all;
 }
+
+/* ---------- Legenda do post (card de resultado) ---------- */
+.caption {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.caption__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.caption__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+.caption__state {
+  font-size: 11px;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.caption__text {
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.caption__text:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.caption__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  max-width: 100%;
+}
+.tagchip:hover {
+  border-color: var(--accent);
+}
+.tagchip--input {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 500;
+  cursor: text;
+  width: 96px;
+  border-style: dashed;
+}
+.tagchip--input:focus {
+  outline: none;
+  border-color: var(--accent);
+  border-style: solid;
+}
+.caption__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.caption__count {
+  font-size: 11px;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.caption__count.is-full {
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+.caption__err {
+  font-size: 12px;
+  color: #b42318;
+}
+[data-theme="dark"] .caption__err {
+  color: #ff9b93;
+}
+.btn--xs {
+  padding: 6px 10px;
+  font-size: 12px;
+  gap: 6px;
+  border-radius: 9px;
+}
+
+/* Destaque para os números de produção/publicação. */
+.metric-card--accent {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--accent-soft), var(--surface) 70%);
+}
+.metric-card__sub {
+  font-size: 11px;
+  color: var(--text-soft);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}

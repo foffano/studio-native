@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { getLibrary, libraryVideoUrl, outputUrl } from "../api.js";
+import {
+  getLibrary,
+  libraryVideoUrl,
+  outputUrl,
+  updateOutput,
+  regenerateCaption,
+} from "../api.js";
 import { beginGeneration } from "../lib/generationManager.js";
 import HeightPicker from "./HeightPicker.jsx";
 import Swatches from "./Swatches.jsx";
@@ -11,7 +17,10 @@ import {
   IconMinus,
   IconCheck,
   IconFolder,
+  IconRefresh,
 } from "./Icons.jsx";
+
+const MAX_HASHTAGS = 5;
 
 const DEFAULTS = {
   theme: "",
@@ -686,10 +695,156 @@ function ResultCard({ r, index, isNew }) {
       <div className="rcard__body">
         <p className="rcard__phrase">{r.phrase}</p>
         {r.speech && <p className="rcard__speech">🎙 {r.speech}</p>}
+        <CaptionEditor result={r} />
         <a className="btn btn--ghost btn--block" href={url} download={r.file}>
           <IconDownload width={16} height={16} /> Baixar
         </a>
       </div>
+    </div>
+  );
+}
+
+/** Legenda do post + hashtags, editáveis e salvas no catálogo do backend. */
+function CaptionEditor({ result }) {
+  const [caption, setCaption] = useState(result.caption || "");
+  const [tags, setTags] = useState(result.hashtags || []);
+  const [draft, setDraft] = useState("");
+  const [state, setState] = useState("idle"); // idle | saving | saved | error
+  const [error, setError] = useState("");
+  const timerRef = useRef(null);
+  const id = result.id;
+
+  // O card é remontado quando a geração avança; mantém o texto em dia sem
+  // sobrescrever o que o usuário está digitando.
+  useEffect(() => {
+    if (state === "idle") {
+      setCaption(result.caption || "");
+      setTags(result.hashtags || []);
+    }
+  }, [result.caption, result.hashtags]);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const persist = async (nextCaption, nextTags) => {
+    if (!id) return;
+    setState("saving");
+    setError("");
+    try {
+      const saved = await updateOutput(id, {
+        caption: nextCaption,
+        hashtags: nextTags,
+      });
+      setCaption(saved.caption);
+      setTags(saved.hashtags);
+      setState("saved");
+      timerRef.current = setTimeout(() => setState("idle"), 1600);
+    } catch (e) {
+      setState("error");
+      setError(e.message);
+    }
+  };
+
+  const addTag = () => {
+    const value = draft.trim();
+    if (!value || tags.length >= MAX_HASHTAGS) return;
+    const next = [...tags, value];
+    setDraft("");
+    setTags(next);
+    persist(caption, next);
+  };
+
+  const removeTag = (tag) => {
+    const next = tags.filter((t) => t !== tag);
+    setTags(next);
+    persist(caption, next);
+  };
+
+  const regenerate = async () => {
+    if (!id) return;
+    setState("saving");
+    setError("");
+    try {
+      const fresh = await regenerateCaption(id);
+      setCaption(fresh.caption);
+      setTags(fresh.hashtags);
+      setState("saved");
+      timerRef.current = setTimeout(() => setState("idle"), 1600);
+    } catch (e) {
+      setState("error");
+      setError(e.message);
+    }
+  };
+
+  if (!id) return null;
+
+  const full = tags.length >= MAX_HASHTAGS;
+
+  return (
+    <div className="caption">
+      <div className="caption__head">
+        <span className="caption__label">Legenda do post</span>
+        <span className="caption__state">
+          {state === "saving" && "salvando…"}
+          {state === "saved" && "salvo"}
+          {state === "error" && "não salvou"}
+        </span>
+      </div>
+
+      <textarea
+        className="caption__text"
+        value={caption}
+        rows={2}
+        maxLength={150}
+        placeholder="Escreva a legenda do post…"
+        onChange={(e) => setCaption(e.target.value)}
+        onBlur={() => caption !== result.caption && persist(caption, tags)}
+      />
+
+      <div className="caption__tags">
+        {tags.map((t) => (
+          <button
+            type="button"
+            className="tagchip"
+            key={t}
+            onClick={() => removeTag(t)}
+            title="Remover hashtag"
+          >
+            #{t}
+            <IconMinus width={12} height={12} />
+          </button>
+        ))}
+        {!full && (
+          <input
+            className="tagchip tagchip--input"
+            value={draft}
+            placeholder="+ hashtag"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addTag();
+              }
+            }}
+            onBlur={addTag}
+          />
+        )}
+      </div>
+
+      <div className="caption__foot">
+        <span className={"caption__count" + (full ? " is-full" : "")}>
+          {tags.length}/{MAX_HASHTAGS} hashtags · {caption.length}/150
+        </span>
+        <button
+          type="button"
+          className="btn btn--ghost btn--xs"
+          onClick={regenerate}
+          disabled={state === "saving"}
+        >
+          <IconRefresh width={14} height={14} /> Outra legenda
+        </button>
+      </div>
+
+      {error && <div className="caption__err">{error}</div>}
     </div>
   );
 }

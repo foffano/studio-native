@@ -90,3 +90,48 @@ export async function deleteLibraryItem(id) {
   const res = await fetch(apiUrl(`/api/library/${id}`), { method: "DELETE" });
   return jsonOrThrow(res);
 }
+
+// --- Catalogo de producao: os videos que o app gerou -----------------------
+
+export async function getOutputs(params = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== "" && v != null)
+  ).toString();
+  const res = await fetch(apiUrl(`/api/outputs${qs ? `?${qs}` : ""}`));
+  return jsonOrThrow(res);
+}
+
+export async function updateOutput(id, patch) {
+  const res = await fetch(apiUrl(`/api/outputs/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function deleteOutput(id) {
+  const res = await fetch(apiUrl(`/api/outputs/${id}`), { method: "DELETE" });
+  return jsonOrThrow(res);
+}
+
+export async function regenerateCaption(id) {
+  const res = await fetch(apiUrl(`/api/outputs/${id}/caption`), {
+    method: "POST",
+  });
+  return jsonOrThrow(res);
+}
+
+export async function importHistoryToBackend(entries) {
+  const res = await fetch(apiUrl("/api/outputs/import"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entries }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function getMetrics() {
+  const res = await fetch(apiUrl("/api/metrics"));
+  return jsonOrThrow(res);
+}

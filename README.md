@@ -85,6 +85,55 @@ Para releases funcionarem com atualização automática, publique junto ao insta
 4. Para cada frase, é gerada uma imagem RGBA do texto com Pillow e sobreposta no vídeo com MoviePy.
 5. Você visualiza, baixa e revê no **Histórico** (persistido localmente).
 
+## Legenda do post e hashtags
+
+Cada vídeo gerado vem com uma **legenda pronta para o post** e **no máximo 5 hashtags**.
+A IA devolve os três textos (frase da tela, legenda e hashtags) **na mesma chamada** da
+OpenRouter — a legenda fica coerente com a frase e não custa um segundo request.
+
+O limite e o formato são aplicados no **backend** (`captions.py`), nunca confiando no
+prompt: as hashtags perdem o `#`, os espaços e os acentos, viram minúsculas, são
+deduplicadas, limitadas a 24 caracteres cada e **cortadas em 5**. Hashtags que a IA
+cola no fim da legenda são movidas para a lista em vez de ficarem duplicadas nos dois
+lugares. A legenda é normalizada e cortada em 150 caracteres.
+
+Se a IA falhar ou devolver a legenda vazia, entra um **fallback determinístico**: a
+legenda vira a própria frase da tela e as hashtags são derivadas do tema digitado mais
+as tags do vídeo-fonte na Biblioteca. O usuário nunca fica sem legenda.
+
+No card do resultado a legenda é **editável**, as hashtags viram chips clicáveis (clique
+remove) e há um botão **"Outra legenda"** que gera outra sem re-renderizar o vídeo.
+
+## Catálogo de produção (`studio.db`)
+
+Antes, o que o app *produzia* existia só como arquivo solto em `outputs/` mais uma
+entrada no `localStorage` do React — o backend não sabia quais vídeos ele mesmo tinha
+gerado. Agora cada MP4 renderizado vira um registro em **SQLite**
+(`%APPDATA%/StudioNative/studio.db`, módulo `store.py`), com três tabelas:
+
+- **`outputs`** — um registro por vídeo gerado: arquivo, frase, narração, legenda,
+  hashtags, tema, vídeo-fonte, duração e data.
+- **`publications`** — uma linha por tentativa de publicação (plataforma, conta, modo,
+  privacidade, produto, estado, URL do post). Preenchida a partir da integração com o
+  TikTok.
+- **`accounts`** — contas conectadas.
+
+SQLite em vez de mais um JSON porque os workers de biblioteca, render e publicação
+escrevem ao mesmo tempo; o padrão de "lock + reescreve o arquivo inteiro" não aguenta
+isso. Vem no Python, sem dependência nova.
+
+Na primeira abertura o app **migra sozinho** o histórico do `localStorage` para o
+catálogo (`POST /api/outputs/import`, idempotente, ignora entradas cujo arquivo já não
+existe).
+
+**Métricas:** *produzidos* é a contagem de `outputs`; *publicados* conta `output_id`
+**distintos** com publicação concluída — um vídeo postado em duas contas é um vídeo
+publicado, não dois. Aparecem no topo da Biblioteca, e cada vídeo-fonte mostra quantos
+vídeos rendeu e quantos já foram publicados.
+
+Endpoints: `GET /api/outputs`, `GET/PATCH/DELETE /api/outputs/<id>`,
+`POST /api/outputs/<id>/caption`, `POST /api/outputs/import`, `GET /api/metrics`.
+
 ## Modo com áudio (narração via ElevenLabs)
 
 Além do modo padrão (vídeo só com a frase estática), há um **modo com narração por voz**. Primeiro, abra **Ajustes** e cadastre uma ou mais vozes da ElevenLabs com nome/apelido, **Voice ID**, modelo e parâmetros de voz. Depois, na aba de geração, ligue o toggle **"Gerar áudio (narração por voz)"** e escolha uma das vozes cadastradas.
@@ -161,6 +210,8 @@ Na seção "Opções de estilo" você pode ajustar tamanho da fonte, FPS, o **es
 
 ```
 app.py                       # backend Flask (sidecar): OpenRouter/ElevenLabs + MoviePy/Pillow/ffmpeg
+store.py                     # catalogo de producao em SQLite (outputs/publications/accounts)
+captions.py                  # legenda do post + sanitizacao das hashtags (limite de 5)
 studio_native_backend.spec   # PyInstaller: empacota o backend + fonts + bin/ (ffmpeg)
 tools/fetch_ffmpeg.py        # baixa ffmpeg/ffprobe para bin/
 requirements.txt             # deps Python (inclui pyinstaller)
@@ -177,4 +228,9 @@ desktop/                     # app Electron + React
   src/                       #  React: App, api.js, components/, lib/history.js
 ```
 
-Saídas de build: `dist/StudioNativeBackend/` (PyInstaller) e `desktop/release/` (instalador). Dados em runtime: `%APPDATA%/StudioNative/`.
+Saídas de build: `dist/StudioNativeBackend/` (PyInstaller) e `desktop/release/` (instalador). Dados em runtime: `%APPDATA%/StudioNative/` (inclui `studio.db`, o catálogo de produção).
+
+## Próximos passos
+
+O roteiro completo para publicação no TikTok (OAuth, fila de publicação, produto/carrinho
+e reforma da navegação) está em [`docs/plano-legenda-e-publicacao-tiktok.md`](docs/plano-legenda-e-publicacao-tiktok.md).

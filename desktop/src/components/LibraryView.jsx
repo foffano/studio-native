@@ -132,19 +132,27 @@ export default function LibraryView({ onUseForGeneration }) {
       <div className="metrics-row">
         <div className="metric-card">
           <div className="metric-card__val">{m.total ?? 0}</div>
-          <div className="metric-card__lbl">Vídeos na biblioteca</div>
+          <div className="metric-card__lbl">Vídeos-fonte</div>
+        </div>
+        <div className="metric-card metric-card--accent">
+          <div className="metric-card__val">{m.total_produced ?? 0}</div>
+          <div className="metric-card__lbl">Vídeos produzidos</div>
+          {m.produced_7d > 0 && (
+            <div className="metric-card__sub">{m.produced_7d} nos últimos 7 dias</div>
+          )}
+        </div>
+        <div className="metric-card metric-card--accent">
+          <div className="metric-card__val">{m.total_published ?? 0}</div>
+          <div className="metric-card__lbl">Publicados</div>
+          {(m.total_produced ?? 0) > 0 && (
+            <div className="metric-card__sub">
+              {m.not_published ?? 0} ainda não publicados
+            </div>
+          )}
         </div>
         <div className="metric-card">
-          <div className="metric-card__val">{m.ready ?? 0}</div>
-          <div className="metric-card__lbl">Prontos</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-card__val">{m.total_generations ?? 0}</div>
-          <div className="metric-card__lbl">Sessões de geração</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-card__val">{m.total_outputs ?? 0}</div>
-          <div className="metric-card__lbl">Vídeos gerados</div>
+          <div className="metric-card__val">{m.pending ?? 0}</div>
+          <div className="metric-card__lbl">Na fila de publicação</div>
         </div>
       </div>
 
@@ -267,11 +275,11 @@ function LibraryCard({
         <div className="lib-card__meta">
           {fmtDur(item.duration_sec)}
           {item.size_bytes ? ` · ${fmtSize(item.size_bytes)}` : ""}
-          {item.generation_count > 0 && (
+          {item.produced_count > 0 && (
             <>
               {" · "}
-              <strong>{item.generation_count}</strong> sessões ·{" "}
-              <strong>{item.total_outputs}</strong> vídeos
+              <strong>{item.produced_count}</strong> vídeos ·{" "}
+              <strong>{item.published_count}</strong> publicados
             </>
           )}
         </div>
