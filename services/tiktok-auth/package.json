@@ -1,0 +1,15 @@
+{
+  "name": "studio-native-tiktok-auth",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Troca de tokens do TikTok para o Studio Native (Cloudflare Worker)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

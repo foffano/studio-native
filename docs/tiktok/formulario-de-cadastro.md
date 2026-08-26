@@ -1,8 +1,11 @@
 # Cadastro do app no TikTok for Developers — o que preencher
 
 Textos prontos para colar, com os limites de caracteres já conferidos.
-Substitua `foffano.github.io/studio-native` se você publicar as páginas em outro
-endereço.
+
+> **Você tem domínio próprio na Cloudflare** — então use-o em vez do GitHub
+> Pages. Troque `SEUDOMINIO.com` pelo domínio escolhido em todo este documento.
+> Isso resolve a verificação de domínio (por registro TXT, direto no painel da
+> Cloudflare) e elimina a única incerteza que restava no cadastro.
 
 ---
 
@@ -32,13 +35,13 @@ Gera videos curtos verticais com apoio de IA no seu computador e os envia para o
 **Terms of Service URL**
 
 ```
-https://foffano.github.io/studio-native/termos.html
+https://SEUDOMINIO.com/termos.html
 ```
 
 **Privacy Policy URL**
 
 ```
-https://foffano.github.io/studio-native/privacidade.html
+https://SEUDOMINIO.com/privacidade.html
 ```
 
 **Platforms** — marque **apenas `Desktop`**.
@@ -123,39 +126,62 @@ Criar o app **não** é o mesmo que submeter à revisão. Vale separar:
 
 ---
 
-## Verificação das URLs — o detalhe que trava
+## Verificação das URLs
 
 Antes da submissão, o TikTok exige verificar **todas as URLs da configuração**
-(Termos, Privacidade e redirect), por arquivo na raiz do domínio
-(`tiktok-developers-site-verification.txt`) ou por registro TXT no DNS.
+(Termos, Privacidade e redirect). Há dois métodos: arquivo na raiz do domínio ou
+registro TXT no DNS.
 
-Com GitHub Pages de repositório, suas páginas ficam em
-`foffano.github.io/studio-native/...`, mas a **raiz** do domínio é
-`foffano.github.io` — que pertence a outro repositório. Se o TikTok pedir o
-arquivo na raiz, crie um repositório público chamado exatamente
-**`foffano.github.io`** (grátis) e coloque o arquivo de verificação na raiz dele.
+**Com o domínio na Cloudflare, use o DNS.** No portal do TikTok, escolha o
+método de verificação por DNS, copie o valor `TXT` que ele fornecer e adicione em
+**Cloudflare → seu domínio → DNS → Records → Add record** (tipo `TXT`). Depois
+volte ao portal e clique em verificar. É mais rápido que o método de arquivo e
+não depende de nenhuma página estar publicada.
 
-Não dá para garantir que o TikTok aceite subdomínios de hospedagem compartilhada
-como `github.io`. Se ele recusar, aí sim vale um domínio próprio (~R$50/ano),
-que resolve verificação e página-ponte de uma vez.
+Isso encerra a dúvida que existia enquanto a ideia era usar `github.io`: lá a
+raiz do domínio pertencia a outro repositório e não havia como criar registros
+DNS. Com domínio próprio, não há truque nenhum.
 
----
+## Publicar as páginas (grátis, no seu domínio)
 
-## Publicar as páginas (2 cliques, grátis)
+As páginas já estão no repositório, em `docs/`. Duas opções:
 
-As páginas já estão no repositório, em `docs/`. Para ficarem no ar:
+**Cloudflare Pages** (recomendado, já que o domínio está lá): Workers & Pages →
+Create → Pages → conectar o repositório `foffano/studio-native` → *Build output
+directory*: `docs`, sem comando de build. Depois, em Custom domains, aponte para
+`SEUDOMINIO.com`. Fica:
 
-**Settings → Pages → Source: `Deploy from a branch` → Branch: `main`, pasta
-`/docs` → Save.**
+- `https://SEUDOMINIO.com/` — página do app
+- `https://SEUDOMINIO.com/privacidade.html`
+- `https://SEUDOMINIO.com/termos.html`
 
-Em um ou dois minutos:
-
-- `https://foffano.github.io/studio-native/` — página do app
-- `https://foffano.github.io/studio-native/privacidade.html`
-- `https://foffano.github.io/studio-native/termos.html`
+**GitHub Pages** (alternativa): Settings → Pages → branch `main`, pasta `/docs`.
+Serve em `foffano.github.io/studio-native/`, o que funciona para as páginas mas
+complica a verificação de domínio — por isso a Cloudflare é a melhor escolha aqui.
 
 **Antes de publicar:** as duas páginas têm um campo
 `[preencha com o e-mail de contato]`. Troque pelo e-mail que você quer expor
 publicamente — considere criar um endereço só para isso, em vez de usar o
 pessoal. E leia os dois textos: eles descrevem o comportamento real do app, mas
 quem responde por eles é você.
+
+---
+
+## Redirect URI
+
+Registre, para a plataforma Desktop:
+
+```
+http://127.0.0.1:43117/api/tiktok/callback
+```
+
+A porta **43117 é fixa** — o TikTok exige URI estático, e hoje o Electron sorteia
+uma porta livre. A fase 4 vai reservar essa porta só para o callback.
+
+Se o portal recusar o loopback, o fallback já está pronto: registre
+`https://auth.SEUDOMINIO.com/tiktok/callback`, que é uma rota do Worker em
+`services/tiktok-auth/` e devolve o usuário ao app.
+
+O mesmo Worker guarda o `client_secret` e faz a troca do `code` por token —
+o segredo não pode ficar dentro do `.exe`. Deploy e detalhes em
+[`services/tiktok-auth/README.md`](../../services/tiktok-auth/README.md).

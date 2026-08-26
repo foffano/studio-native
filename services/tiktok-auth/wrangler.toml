@@ -1,0 +1,16 @@
+name = "studio-native-tiktok-auth"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# Troque SEUDOMINIO.com pelo domínio que você já tem na Cloudflare.
+# A rota fica em auth.SEUDOMINIO.com; o registro DNS é criado pelo próprio
+# wrangler no deploy (proxied), desde que a zona esteja na mesma conta.
+[[routes]]
+pattern = "auth.SEUDOMINIO.com/*"
+zone_name = "SEUDOMINIO.com"
+custom_domain = false
+
+# TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET NÃO ficam aqui.
+# São secrets, definidos por linha de comando:
+#   npx wrangler secret put TIKTOK_CLIENT_KEY
+#   npx wrangler secret put TIKTOK_CLIENT_SECRET

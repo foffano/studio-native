@@ -22,3 +22,8 @@ desktop/release/
 # artefatos de teste
 _frame_*.png
 frame_*.png
+
+# Cloudflare Worker
+services/tiktok-auth/node_modules/
+services/tiktok-auth/.wrangler/
+.dev.vars
