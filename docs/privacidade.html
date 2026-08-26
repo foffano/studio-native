@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidade — Studio Native</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --surface: #fff; --ink: #1b2029; --ink-2: #444d5c;
+    --muted: #6b7484; --line: #dfe4ec; --accent: #c34d0b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --surface: #191d25; --ink: #edf0f5; --ink-2: #c3cad6;
+      --muted: #8b94a7; --line: #2b3240; --accent: #ff8a47;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 36px; }
+  h1 { font-size: clamp(28px, 5vw, 38px); line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0; }
+  h2 { font-size: 21px; margin: 40px 0 12px; letter-spacing: -0.01em; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p, li { color: var(--ink-2); }
+  p { margin: 0 0 14px; }
+  ul { padding-left: 22px; margin: 0 0 16px; }
+  li { margin-bottom: 7px; }
+  strong { color: var(--ink); }
+  code {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 5px; font-size: 0.88em;
+    font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  }
+  .box {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 8px;
+    padding: 18px 20px; margin: 0 0 22px;
+  }
+  .box > :last-child { margin-bottom: 0; }
+  .langs { display: flex; gap: 14px; font-size: 14px; margin-top: 14px; }
+  a { color: var(--accent); }
+  footer {
+    margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Política de Privacidade</h1>
+  <p class="sub">Studio Native · última atualização: 26 de agosto de 2026</p>
+  <div class="langs"><a href="#en">English version below ↓</a></div>
+</header>
+
+<div class="box">
+  <p><strong>O resumo:</strong> o Studio Native é um aplicativo que roda no seu
+  computador. Seus vídeos são processados localmente e não são enviados para
+  nenhum servidor nosso — nós não operamos servidores que guardem seus dados.
+  Somente <em>texto</em> vai para serviços de IA, e um vídeo só sai da sua
+  máquina quando você manda publicá-lo no seu próprio TikTok.</p>
+</div>
+
+<h2>1. Quem somos</h2>
+<p>O Studio Native é um aplicativo desktop para Windows que gera vídeos curtos
+com auxílio de IA e permite enviá-los para a conta de TikTok do próprio usuário.
+Esta política descreve como o aplicativo trata dados.</p>
+
+<h2>2. Dados que o aplicativo trata</h2>
+
+<h3>2.1. Seus vídeos e imagens</h3>
+<p>Os vídeos que você importa e os vídeos gerados ficam <strong>apenas no seu
+computador</strong>, na pasta de dados do aplicativo
+(<code>%APPDATA%\StudioNative</code>). Todo o processamento de vídeo — normalização,
+sobreposição de texto e renderização — acontece localmente, com ffmpeg. Nenhum
+vídeo é enviado para os serviços de IA usados pelo aplicativo.</p>
+
+<h3>2.2. Textos enviados a serviços de IA</h3>
+<ul>
+  <li><strong>OpenRouter:</strong> recebe apenas o tema/contexto que você digita,
+  para gerar as frases, a legenda do post e as hashtags.</li>
+  <li><strong>ElevenLabs</strong> (opcional, só se você ligar a narração):
+  recebe apenas o texto a ser falado, para gerar o áudio.</li>
+</ul>
+<p>Esses serviços são operados por terceiros e têm políticas próprias. Você usa
+suas próprias chaves de API com eles.</p>
+
+<h3>2.3. Chaves de API e credenciais</h3>
+<p>Suas chaves de API são guardadas <strong>somente no seu computador</strong>, em
+<code>%APPDATA%\StudioNative\config.json</code>. Elas nunca são transmitidas para
+nós.</p>
+
+<h3>2.4. Dados do TikTok</h3>
+<p>Quando você conecta sua conta do TikTok, o aplicativo solicita as seguintes
+permissões:</p>
+<ul>
+  <li><strong><code>user.info.basic</code></strong> — usado exclusivamente para
+  mostrar o apelido e a foto da conta conectada dentro do aplicativo, para que
+  você confirme para qual conta está enviando um vídeo.</li>
+  <li><strong><code>video.upload</code></strong> — usado exclusivamente para
+  enviar, a seu pedido, um vídeo que você gerou para os
+  <strong>rascunhos</strong> da sua própria conta do TikTok. O aplicativo não
+  publica nada publicamente em seu nome: a publicação é sempre concluída por
+  você, dentro do TikTok.</li>
+</ul>
+<p>Os tokens de acesso e de renovação do TikTok são guardados <strong>no seu
+computador</strong>, na pasta de dados do aplicativo. Não vendemos, alugamos nem
+compartilhamos esses dados com terceiros.</p>
+<p>Para completar o login, o código de autorização devolvido pelo TikTok pode ser
+trocado por um token através de um serviço mínimo mantido pelo desenvolvedor do
+aplicativo, exigido porque o segredo do cliente não pode ficar dentro de um
+programa instalado. Esse serviço apenas repassa a troca ao TikTok; ele não
+armazena tokens nem recebe qualquer vídeo seu.</p>
+
+<h3>2.5. Verificação de atualizações</h3>
+<p>O aplicativo consulta o GitHub para saber se há uma versão mais nova. Essa
+consulta expõe ao GitHub o endereço IP do seu computador, como qualquer acesso
+à internet. Nenhum dado de uso é enviado junto.</p>
+
+<h3>2.6. O que o aplicativo NÃO faz</h3>
+<ul>
+  <li>Não coleta telemetria, estatísticas de uso nem perfis de comportamento.</li>
+  <li>Não envia seus vídeos para servidores nossos.</li>
+  <li>Não usa cookies nem rastreadores de publicidade.</li>
+  <li>Não lê nem publica conteúdo do seu TikTok além do que está descrito acima.</li>
+</ul>
+
+<h2>3. Por quanto tempo os dados ficam guardados</h2>
+<p>Como os dados ficam no seu computador, eles permanecem enquanto você quiser.
+Você pode apagá-los a qualquer momento:</p>
+<ul>
+  <li><strong>Desconectar o TikTok:</strong> remove os tokens salvos no aplicativo.
+  Você também pode revogar o acesso diretamente nas configurações da sua conta
+  do TikTok.</li>
+  <li><strong>Apagar vídeos e histórico:</strong> exclua os itens dentro do
+  aplicativo, ou apague a pasta <code>%APPDATA%\StudioNative</code>.</li>
+  <li><strong>Desinstalar:</strong> remove o aplicativo; apagar a pasta de dados
+  remove tudo que ele guardou.</li>
+</ul>
+
+<h2>4. Seus direitos</h2>
+<p>Como não mantemos seus dados em servidores nossos, o controle é integralmente
+seu: acesso, correção e exclusão são feitos no próprio computador, pelos meios
+descritos acima. Se ainda assim você tiver uma solicitação relacionada à Lei
+Geral de Proteção de Dados (LGPD) ou ao GDPR, use o contato abaixo.</p>
+
+<h2>5. Crianças</h2>
+<p>O aplicativo não se destina a menores de 13 anos, e o uso do TikTok está
+sujeito à idade mínima exigida pelo próprio TikTok.</p>
+
+<h2>6. Mudanças nesta política</h2>
+<p>Se esta política mudar, a data no topo será atualizada e a nova versão passa a
+valer a partir da publicação nesta mesma página.</p>
+
+<h2>7. Contato</h2>
+<p>Dúvidas sobre privacidade: <strong>[preencha com o e-mail de contato]</strong>.</p>
+
+<hr style="margin:56px 0 0;border:0;border-top:1px solid var(--line)">
+
+<h1 id="en" style="font-size:28px;margin-top:44px;">Privacy Policy (English)</h1>
+<p class="sub">Studio Native · last updated: August 26, 2026</p>
+
+<div class="box">
+  <p><strong>In short:</strong> Studio Native is an application that runs on your
+  own computer. Your videos are processed locally and are never sent to any
+  server of ours — we do not operate servers that store your data. Only
+  <em>text</em> is sent to AI services, and a video leaves your machine only when
+  you ask us to send it to your own TikTok account.</p>
+</div>
+
+<h2>1. Who we are</h2>
+<p>Studio Native is a Windows desktop application that generates short videos
+with AI assistance and lets the user send them to their own TikTok account.</p>
+
+<h2>2. Data the app handles</h2>
+<h3>2.1. Your videos</h3>
+<p>Imported and generated videos stay <strong>only on your computer</strong>, in
+the app data folder (<code>%APPDATA%\StudioNative</code>). All video processing
+happens locally with ffmpeg. No video is sent to the AI services used by the app.</p>
+
+<h3>2.2. Text sent to AI services</h3>
+<ul>
+  <li><strong>OpenRouter</strong> receives only the theme/context you type, to
+  generate on-screen phrases, the post caption and hashtags.</li>
+  <li><strong>ElevenLabs</strong> (optional, only if you enable narration)
+  receives only the text to be spoken.</li>
+</ul>
+
+<h3>2.3. API keys</h3>
+<p>Your API keys are stored <strong>only on your computer</strong>, in
+<code>%APPDATA%\StudioNative\config.json</code>. They are never transmitted to us.</p>
+
+<h3>2.4. TikTok data</h3>
+<p>When you connect your TikTok account, the app requests:</p>
+<ul>
+  <li><strong><code>user.info.basic</code></strong> — used solely to display the
+  connected account's nickname and avatar inside the app, so you can confirm
+  which account you are about to send a video to.</li>
+  <li><strong><code>video.upload</code></strong> — used solely to send, at your
+  request, a video you generated to the <strong>drafts</strong> of your own
+  TikTok account. The app never posts publicly on your behalf; publishing is
+  always completed by you, inside TikTok.</li>
+</ul>
+<p>TikTok access and refresh tokens are stored <strong>on your computer</strong>,
+in the app data folder. We do not sell, rent or share this data with third
+parties.</p>
+<p>To complete login, the authorization code returned by TikTok may be exchanged
+for a token through a minimal service maintained by the app's developer, required
+because the client secret cannot be embedded in an installed program. That service
+only relays the exchange to TikTok; it stores no tokens and receives none of your
+videos.</p>
+
+<h3>2.5. Update checks</h3>
+<p>The app queries GitHub for newer releases. This exposes your IP address to
+GitHub, as any internet request does. No usage data is sent with it.</p>
+
+<h3>2.6. What the app does NOT do</h3>
+<ul>
+  <li>No telemetry, usage analytics or behavioral profiling.</li>
+  <li>No uploading of your videos to servers of ours.</li>
+  <li>No cookies or advertising trackers.</li>
+  <li>No reading or posting of your TikTok content beyond what is described above.</li>
+</ul>
+
+<h2>3. Retention and deletion</h2>
+<p>Because data stays on your computer, it remains for as long as you want.
+Disconnecting TikTok removes the stored tokens (you may also revoke access in
+your TikTok account settings); deleting items in the app, or the
+<code>%APPDATA%\StudioNative</code> folder, removes everything the app stored.</p>
+
+<h2>4. Your rights</h2>
+<p>Since we hold no data on servers of ours, access, correction and deletion are
+entirely under your control, through the means described above. For any request
+under Brazil's LGPD or the GDPR, use the contact below.</p>
+
+<h2>5. Children</h2>
+<p>The app is not intended for children under 13, and TikTok use is subject to
+TikTok's own minimum age requirements.</p>
+
+<h2>6. Changes</h2>
+<p>If this policy changes, the date at the top is updated and the new version
+applies from its publication on this page.</p>
+
+<h2>7. Contact</h2>
+<p>Privacy questions: <strong>[fill in the contact e-mail]</strong>.</p>
+
+<footer>
+  Studio Native · <a href="termos.html">Termos de Uso / Terms of Service</a>
+</footer>
+
+</div>
+</body>
+</html>

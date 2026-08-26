@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio Native</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --surface: #fff; --ink: #1b2029; --ink-2: #444d5c;
+    --muted: #6b7484; --line: #dfe4ec; --accent: #c34d0b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --surface: #191d25; --ink: #edf0f5; --ink-2: #c3cad6;
+      --muted: #8b94a7; --line: #2b3240; --accent: #ff8a47;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 72px 24px 96px; }
+  h1 { font-size: clamp(32px, 6vw, 46px); line-height: 1.06; margin: 0 0 16px; letter-spacing: -0.025em; }
+  .lead { font-size: 19px; color: var(--ink-2); margin: 0 0 34px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; letter-spacing: -0.01em; }
+  p, li { color: var(--ink-2); }
+  p { margin: 0 0 14px; }
+  ul { padding-left: 22px; margin: 0 0 16px; }
+  li { margin-bottom: 8px; }
+  strong { color: var(--ink); }
+  a { color: var(--accent); }
+  .links {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px;
+    padding-top: 24px; border-top: 1px solid var(--line);
+    font-size: 15px;
+  }
+  .links a {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 16px; text-decoration: none;
+  }
+  .links a:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Studio Native</h1>
+<p class="lead">Aplicativo desktop para Windows que gera vídeos curtos com apoio
+de IA — e envia o resultado para os rascunhos da sua conta do TikTok.</p>
+
+<h2>Como funciona</h2>
+<ul>
+  <li>Você importa um vídeo e escreve o tema. A IA cria as frases de impacto, a
+  legenda do post e até 5 hashtags — <strong>somente texto</strong> vai para os
+  serviços de IA.</li>
+  <li>O texto é sobreposto no vídeo <strong>no seu computador</strong>, com
+  ffmpeg. Seu vídeo nunca é enviado para servidores nossos.</li>
+  <li>Opcionalmente, uma narração por voz é gerada e sincronizada com o vídeo.</li>
+  <li>Com a conta conectada, o vídeo é enviado para os
+  <strong>rascunhos</strong> do seu TikTok, com a legenda pronta. A publicação
+  final é sempre feita por você, dentro do TikTok.</li>
+</ul>
+
+<h2>Privacidade</h2>
+<p>Tudo fica na sua máquina: vídeos, chaves de API e tokens. Não há telemetria,
+nem servidores nossos guardando seus dados. Os detalhes estão na
+<a href="privacidade.html">Política de Privacidade</a>.</p>
+
+<div class="links">
+  <a href="privacidade.html">Política de Privacidade</a>
+  <a href="termos.html">Termos de Uso</a>
+  <a href="https://github.com/foffano/studio-native">Código no GitHub</a>
+</div>
+
+</div>
+</body>
+</html>
