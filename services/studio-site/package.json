@@ -1,0 +1,12 @@
+{
+  "name": "studio-native-site",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Páginas públicas do Studio Native (Cloudflare static assets)",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

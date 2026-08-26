@@ -25,5 +25,6 @@ frame_*.png
 
 # Cloudflare Worker
 services/tiktok-auth/node_modules/
+services/studio-site/node_modules/
 services/tiktok-auth/.wrangler/
 .dev.vars

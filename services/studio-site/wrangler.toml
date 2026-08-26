@@ -1,0 +1,22 @@
+name = "studio-native-site"
+compatibility_date = "2026-08-01"
+main = "src/worker.js"
+
+# As páginas saem do CDN. O Worker só entra quando o caminho não casa com
+# nenhum arquivo — na prática, apenas para servir a raiz.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# Sem reescrita de URL: /termos.html precisa responder 200 no caminho exato,
+# porque e assim que a URL vai registrada no portal do TikTok, que compara
+# caminho a caminho. O padrao (auto-trailing-slash) redirecionaria para
+# /termos e a verificacao poderia recusar.
+html_handling = "none"
+not_found_handling = "404-page"
+
+# Subdomínio dedicado. Nada aqui toca o apex toffa.com.br, que já está em uso
+# (inclusive pelo e-mail no iCloud — mexer no apex quebraria o MX).
+# custom_domain = true é o que faz o wrangler criar o registro DNS sozinho.
+[[routes]]
+pattern = "studio.toffa.com.br"
+custom_domain = true

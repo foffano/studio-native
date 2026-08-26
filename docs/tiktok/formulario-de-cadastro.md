@@ -142,28 +142,38 @@ Isso encerra a dúvida que existia enquanto a ideia era usar `github.io`: lá a
 raiz do domínio pertencia a outro repositório e não havia como criar registros
 DNS. Com domínio próprio, não há truque nenhum.
 
-## Publicar as páginas (grátis, no seu domínio)
+## Publicar as páginas — já está feito
 
-As páginas já estão no repositório, em `docs/`. Duas opções:
-
-**Cloudflare Pages** (recomendado, já que o domínio está lá): Workers & Pages →
-Create → Pages → conectar o repositório `foffano/studio-native` → *Build output
-directory*: `docs`, sem comando de build. Depois, em Custom domains, aponte para
-`studio.toffa.com.br`. Fica:
+As três páginas estão no ar, servidas como assets estáticos da Cloudflare a
+partir de `services/studio-site/public/`:
 
 - `https://studio.toffa.com.br/` — página do app
 - `https://studio.toffa.com.br/privacidade.html`
 - `https://studio.toffa.com.br/termos.html`
 
-**GitHub Pages** (alternativa): Settings → Pages → branch `main`, pasta `/docs`.
-Serve em `foffano.github.io/studio-native/`, o que funciona para as páginas mas
-complica a verificação de domínio — por isso a Cloudflare é a melhor escolha aqui.
+Para republicar depois de editar o HTML: `cd services/studio-site && npx wrangler deploy`.
 
-**Antes de publicar:** as duas páginas têm um campo
-`[preencha com o e-mail de contato]`. Troque pelo e-mail que você quer expor
-publicamente — considere criar um endereço só para isso, em vez de usar o
-pessoal. E leia os dois textos: eles descrevem o comportamento real do app, mas
-quem responde por eles é você.
+**Por que não Cloudflare Pages, como estava planejado aqui antes:** Pages pediria
+conectar o repositório e adicionar o domínio pelo painel. Com assets estáticos de
+Worker o `wrangler deploy` faz tudo por linha de comando, DNS incluído. Mesmo
+plano gratuito, mesmo CDN.
+
+**E por que as páginas saíram de `docs/`:** apontar o site para `docs/` publicaria
+junto o plano de produto e este próprio formulário. Só entra em `public/` o que é
+para ser lido por qualquer um.
+
+### O e-mail de contato
+
+As duas páginas exibem `contato@toffa.com.br`. **Esse endereço ainda precisa
+existir de verdade** — a política de privacidade promete um canal de contato, e
+o TikTok pode escrever para ele durante a revisão.
+
+Crie no **iCloud**, não na Cloudflare: o domínio já usa iCloud Mail (os MX
+apontam para `mx01/mx02.mail.icloud.com`). Ativar o Email Routing da Cloudflare
+substituiria esses MX e derrubaria o e-mail que já funciona.
+
+Caminho: iCloud.com → Mail → Configurações → Domínios personalizados →
+`toffa.com.br` → adicionar endereço de e-mail. Está incluído no iCloud+.
 
 ---
 
