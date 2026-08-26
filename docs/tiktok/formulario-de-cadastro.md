@@ -2,10 +2,10 @@
 
 Textos prontos para colar, com os limites de caracteres já conferidos.
 
-> **Você tem domínio próprio na Cloudflare** — então use-o em vez do GitHub
-> Pages. Troque `SEUDOMINIO.com` pelo domínio escolhido em todo este documento.
-> Isso resolve a verificação de domínio (por registro TXT, direto no painel da
-> Cloudflare) e elimina a única incerteza que restava no cadastro.
+> As URLs abaixo usam `studio.toffa.com.br` (páginas) e `auth.toffa.com.br`
+> (serviço de token) — subdomínios novos, que não encostam no apex
+> `toffa.com.br`, já em uso. Ter o domínio na Cloudflare resolve a verificação
+> por registro TXT no DNS e elimina a única incerteza que restava no cadastro.
 
 ---
 
@@ -35,13 +35,13 @@ Gera videos curtos verticais com apoio de IA no seu computador e os envia para o
 **Terms of Service URL**
 
 ```
-https://SEUDOMINIO.com/termos.html
+https://studio.toffa.com.br/termos.html
 ```
 
 **Privacy Policy URL**
 
 ```
-https://SEUDOMINIO.com/privacidade.html
+https://studio.toffa.com.br/privacidade.html
 ```
 
 **Platforms** — marque **apenas `Desktop`**.
@@ -149,11 +149,11 @@ As páginas já estão no repositório, em `docs/`. Duas opções:
 **Cloudflare Pages** (recomendado, já que o domínio está lá): Workers & Pages →
 Create → Pages → conectar o repositório `foffano/studio-native` → *Build output
 directory*: `docs`, sem comando de build. Depois, em Custom domains, aponte para
-`SEUDOMINIO.com`. Fica:
+`studio.toffa.com.br`. Fica:
 
-- `https://SEUDOMINIO.com/` — página do app
-- `https://SEUDOMINIO.com/privacidade.html`
-- `https://SEUDOMINIO.com/termos.html`
+- `https://studio.toffa.com.br/` — página do app
+- `https://studio.toffa.com.br/privacidade.html`
+- `https://studio.toffa.com.br/termos.html`
 
 **GitHub Pages** (alternativa): Settings → Pages → branch `main`, pasta `/docs`.
 Serve em `foffano.github.io/studio-native/`, o que funciona para as páginas mas
@@ -179,7 +179,7 @@ A porta **43117 é fixa** — o TikTok exige URI estático, e hoje o Electron so
 uma porta livre. A fase 4 vai reservar essa porta só para o callback.
 
 Se o portal recusar o loopback, o fallback já está pronto: registre
-`https://auth.SEUDOMINIO.com/tiktok/callback`, que é uma rota do Worker em
+`https://auth.toffa.com.br/tiktok/callback`, que é uma rota do Worker em
 `services/tiktok-auth/` e devolve o usuário ao app.
 
 O mesmo Worker guarda o `client_secret` e faz a troca do `code` por token —

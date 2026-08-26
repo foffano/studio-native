@@ -38,27 +38,26 @@ o app desktop, não um navegador.
 
 ## Deploy
 
-Pré-requisito: um domínio já na sua conta Cloudflare.
+Pré-requisito: a zona `toffa.com.br` na sua conta Cloudflare. O deploy cria o
+registro DNS de `auth.` sozinho e não encosta no apex, que já está em uso.
 
 ```bash
 cd services/tiktok-auth
 npm install
 
-# 1) troque SEUDOMINIO.com no wrangler.toml (duas ocorrências)
-
-# 2) guarde as credenciais do portal do TikTok como secrets
+# 1) guarde as credenciais do portal do TikTok como secrets
 #    (elas NUNCA entram no wrangler.toml nem no git)
 npx wrangler secret put TIKTOK_CLIENT_KEY
 npx wrangler secret put TIKTOK_CLIENT_SECRET
 
-# 3) publique
+# 2) publique (a rota auth.toffa.com.br já está no wrangler.toml)
 npx wrangler deploy
 ```
 
 Conferir:
 
 ```bash
-curl https://auth.SEUDOMINIO.com/health
+curl https://auth.toffa.com.br/health
 # {"ok":true,"service":"studio-native-tiktok-auth"}
 ```
 
@@ -72,7 +71,7 @@ static"* — ou seja, `http://127.0.0.1:43117/api/tiktok/callback` tende a ser
 aceito direto, e aí nenhuma página-ponte é necessária.
 
 Se o portal recusar o loopback, registre
-`https://auth.SEUDOMINIO.com/tiktok/callback` como redirect URI: essa rota
+`https://auth.toffa.com.br/tiktok/callback` como redirect URI: essa rota
 devolve o usuário ao app pela porta fixa 43117. O `code` passa pelo navegador do
 próprio usuário e nunca é armazenado pelo Worker.
 
