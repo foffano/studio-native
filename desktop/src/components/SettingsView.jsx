@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getSettings, saveSettings } from "../api.js";
 import { IconCheck } from "./Icons.jsx";
+import TikTokAccount from "./TikTokAccount.jsx";
 import VoicesManager from "./VoicesManager.jsx";
 
 export default function SettingsView({ onSaved }) {
@@ -196,6 +197,8 @@ export default function SettingsView({ onSaved }) {
           </div>
         </div>
       </div>
+
+      <TikTokAccount />
 
       <div className="card">
         <button className="btn btn--primary" disabled={saving} onClick={save}>

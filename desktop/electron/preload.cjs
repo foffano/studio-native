@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld("studioNative", {
   backendUrl: readBackendUrl(),
   isElectron: true,
   platform: process.platform,
+  // Só o main tem shell.openExternal; o renderer pede por aqui. A validação
+  // de destino fica lá, não neste lado — este arquivo roda perto do renderer.
+  openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
   updates: {
     getState: () => ipcRenderer.invoke("updates:get-state"),
     check: () => ipcRenderer.invoke("updates:check"),

@@ -461,3 +461,133 @@ def import_history(entries, existing_files):
             )
             imported += 1
     return {"imported": imported, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# accounts (contas de plataforma conectadas)
+# ---------------------------------------------------------------------------
+# Os tokens chegam aqui ja cifrados: quem cifra e o modulo que fala com a
+# plataforma. O store nunca ve token em texto puro, e por isso nao ha risco de
+# um SELECT * cair num log com o segredo dentro.
+
+# Campos que a UI pode ver. `access_token_enc` e `refresh_token_enc` ficam de
+# fora de proposito -- eles nunca sao serializados para o frontend.
+PUBLIC_ACCOUNT_FIELDS = (
+    "id", "platform", "open_id", "nickname", "avatar_url",
+    "expires_at", "scopes", "audited", "created_at",
+)
+
+
+def public_account(row):
+    """Versao da conta segura para atravessar HTTP ate o React."""
+    if not row:
+        return None
+    out = {k: row.get(k) for k in PUBLIC_ACCOUNT_FIELDS}
+    out["audited"] = bool(out.get("audited"))
+    out["connected"] = bool(row.get("access_token_enc"))
+    return out
+
+
+def upsert_account(
+    platform,
+    open_id,
+    nickname="",
+    avatar_url="",
+    access_token_enc="",
+    refresh_token_enc="",
+    expires_at="",
+    scopes="",
+):
+    """Grava a conta. Reconectar a mesma conta atualiza, nao duplica.
+
+    A chave e (platform, open_id): o open_id e o identificador estavel que o
+    TikTok devolve. Reconectar por qualquer motivo -- token expirado, escopo
+    novo, usuario clicou de novo -- tem que reaproveitar a linha, senao o
+    historico de publicacoes aponta para uma conta orfa.
+    """
+    existing = _one(
+        "SELECT * FROM accounts WHERE platform = ? AND open_id = ?",
+        (platform, open_id),
+    )
+    if existing:
+        _exec(
+            """UPDATE accounts SET nickname = ?, avatar_url = ?,
+                   access_token_enc = ?, refresh_token_enc = ?,
+                   expires_at = ?, scopes = ?
+               WHERE id = ?""",
+            (nickname, avatar_url, access_token_enc, refresh_token_enc,
+             expires_at, scopes, existing["id"]),
+        )
+        return get_account(existing["id"])
+
+    account_id = uuid.uuid4().hex[:12]
+    _exec(
+        """INSERT INTO accounts
+               (id, platform, open_id, nickname, avatar_url, access_token_enc,
+                refresh_token_enc, expires_at, scopes, audited, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+        (account_id, platform, open_id, nickname, avatar_url, access_token_enc,
+         refresh_token_enc, expires_at, scopes, _now()),
+    )
+    return get_account(account_id)
+
+
+def get_account(account_id):
+    return _one("SELECT * FROM accounts WHERE id = ?", (account_id,))
+
+
+def active_account(platform="tiktok"):
+    """A conta que o app usa hoje.
+
+    O modelo suporta varias contas (a tabela tem id proprio), mas a fase 4
+    trabalha com uma so. Pegar a mais recente com token evita que uma conta
+    desconectada, cuja linha ficou para tras, seja escolhida.
+    """
+    return _one(
+        """SELECT * FROM accounts
+           WHERE platform = ? AND access_token_enc != ''
+           ORDER BY created_at DESC LIMIT 1""",
+        (platform,),
+    )
+
+
+def list_accounts(platform=None):
+    if platform:
+        return _rows(
+            "SELECT * FROM accounts WHERE platform = ? ORDER BY created_at DESC",
+            (platform,),
+        )
+    return _rows("SELECT * FROM accounts ORDER BY created_at DESC")
+
+
+UPDATABLE_ACCOUNT_FIELDS = (
+    "nickname", "avatar_url", "access_token_enc", "refresh_token_enc",
+    "expires_at", "scopes", "audited",
+)
+
+
+def update_account(account_id, **fields):
+    sets, params = [], []
+    for key, value in fields.items():
+        if key not in UPDATABLE_ACCOUNT_FIELDS:
+            continue
+        sets.append(f"{key} = ?")
+        params.append(value)
+    if not sets:
+        return get_account(account_id)
+    params.append(account_id)
+    _exec(f"UPDATE accounts SET {', '.join(sets)} WHERE id = ?", tuple(params))
+    return get_account(account_id)
+
+
+def delete_account(account_id):
+    """Desconecta.
+
+    Apaga a linha inteira em vez de so limpar os tokens: manter open_id e
+    apelido de uma conta desconectada e guardar dado pessoal sem finalidade --
+    e a politica de privacidade publicada promete o contrario. As publicacoes
+    ja feitas guardam o `account_id` como texto, entao o historico sobrevive.
+    """
+    item = get_account(account_id)
+    _exec("DELETE FROM accounts WHERE id = ?", (account_id,))
+    return item

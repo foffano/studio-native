@@ -106,14 +106,36 @@ Entregável: legenda editável no card, chips de hashtag, contador 5/5, botão
 `library_metrics()` ganha `published_count` por fonte — cada card mostra
 "12 vídeos · 5 publicados".
 
-### Fase 4 — Conectar a conta do TikTok (3–4 dias + aprovação)
+### Fase 4 — Conectar a conta do TikTok ✅ feita
 
-Login Kit v2 com PKCE; escopos `user.info.basic`, `video.upload`, `video.publish`.
-Electron abre o navegador com `shell.openExternal` (já usado em main.cjs:212), a
-página-ponte HTTPS devolve para `http://127.0.0.1:<porta>/api/tiktok/callback`.
-Access token 24h, refresh 365 dias, cifrados, renovação automática.
+Login Kit v2 com PKCE. `tiktok.py` no backend, `TikTokAccount.jsx` na tela de
+Ajustes, tokens cifrados com DPAPI (`secretbox.py`) e renovação automática com
+30 min de folga antes do vencimento.
 
-**Começar cedo:** a aprovação leva dias a semanas e é a única parte fora do seu controle.
+Quatro coisas saíram diferentes do que estava escrito aqui, e o motivo importa:
+
+**A porta 43117 não é a do backend.** Fixar o backend inteiro nela faria o app
+não abrir quando qualquer outro programa estivesse usando a porta — um modo de
+falha permanente para resolver um problema de trinta segundos. Em vez disso,
+`tiktok.py` sobe um listener descartável em 43117 só durante o login. O backend
+continua na porta sorteada pelo Electron.
+
+**Escopos: só `user.info.basic` e `video.upload`.** O `video.publish` que estava
+listado aqui é publicação direta no perfil — não é o caminho escolhido (o
+rascunho é o que permite adicionar o carrinho depois) e puxa a revisão mais
+rígida do TikTok. Pedir escopo que não se demonstra no vídeo atrasa a revisão.
+
+**O `client_key` vem do Worker, não do `.exe`.** `GET /tiktok/client-key`. Ele é
+público, mas embutido no executável a rotação exigiria liberar versão nova para
+todos os usuários.
+
+**Não há página-ponte.** O portal aceitou o redirect em loopback direto, então a
+rota `/tiktok/callback` do Worker continua existindo só como fallback.
+
+Cifragem: DPAPI do Windows via ctypes, sem dependência nova. `cryptography`
+traria binário para o PyInstaller e a chave acabaria guardada ao lado do texto
+cifrado — o que é ofuscação, não cifra. Fora do Windows o fallback é ofuscação
+declarada, e a UI avisa isso ao usuário em vez de prometer proteção que não tem.
 
 ### Fase 5 — Publicar (4–5 dias)
 

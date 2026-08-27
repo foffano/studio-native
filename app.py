@@ -31,7 +31,9 @@ from moviepy import (
 )
 
 import captions as cap
+import secretbox
 import store
+import tiktok
 
 # ---------------------------------------------------------------------------
 # Resolucao de caminhos (suporta execucao normal e empacotada com PyInstaller).
@@ -431,6 +433,7 @@ def recover_library_on_startup():
 
 init_library()
 store.init_store(STUDIO_DB_PATH)
+secretbox.init_secretbox(USER_DATA_DIR)
 recover_library_on_startup()
 
 
@@ -1805,6 +1808,52 @@ def api_settings_post():
     _save_config_file(stored)
 
     return api_settings_get()
+
+
+# ---------------------------------------------------------------------------
+# Conta do TikTok (fase 4)
+# ---------------------------------------------------------------------------
+# O callback NAO e rota daqui: ele chega na porta fixa 43117, atendida por um
+# listener descartavel em tiktok.py. Estas rotas so comandam o fluxo e contam
+# como ele esta indo.
+
+
+@app.route("/api/tiktok/account", methods=["GET"])
+def api_tiktok_account():
+    return jsonify(
+        {
+            "account": tiktok.current_account(),
+            "cifra_do_sistema": secretbox.is_real_encryption(),
+        }
+    )
+
+
+@app.route("/api/tiktok/account", methods=["DELETE"])
+def api_tiktok_disconnect():
+    return jsonify({"account": None, "removida": tiktok.disconnect()})
+
+
+@app.route("/api/tiktok/connect", methods=["POST"])
+def api_tiktok_connect():
+    """Prepara o login e devolve a URL para o app abrir no navegador."""
+    try:
+        return jsonify(tiktok.start_connect())
+    except tiktok.TikTokError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/tiktok/connect", methods=["DELETE"])
+def api_tiktok_connect_cancel():
+    return jsonify(tiktok.cancel_connect())
+
+
+@app.route("/api/tiktok/connect/status", methods=["GET"])
+def api_tiktok_connect_status():
+    """Polling da UI enquanto o usuario esta no navegador."""
+    estado = tiktok.flow_status()
+    if estado.get("state") == "conectado":
+        estado["account"] = tiktok.current_account()
+    return jsonify(estado)
 
 
 if __name__ == "__main__":

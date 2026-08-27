@@ -135,3 +135,48 @@ export async function getMetrics() {
   const res = await fetch(apiUrl("/api/metrics"));
   return jsonOrThrow(res);
 }
+
+// --- Conta do TikTok -------------------------------------------------------
+// O callback do OAuth nao passa por aqui: ele chega direto na porta 43117, num
+// listener que o backend sobe so durante o login. Estas funcoes comandam o
+// fluxo e perguntam como ele foi.
+
+export async function getTikTokAccount() {
+  const res = await fetch(apiUrl("/api/tiktok/account"));
+  return jsonOrThrow(res);
+}
+
+export async function startTikTokConnect() {
+  const res = await fetch(apiUrl("/api/tiktok/connect"), { method: "POST" });
+  return jsonOrThrow(res);
+}
+
+export async function getTikTokConnectStatus() {
+  const res = await fetch(apiUrl("/api/tiktok/connect/status"));
+  return jsonOrThrow(res);
+}
+
+export async function cancelTikTokConnect() {
+  const res = await fetch(apiUrl("/api/tiktok/connect"), { method: "DELETE" });
+  return jsonOrThrow(res);
+}
+
+export async function disconnectTikTok() {
+  const res = await fetch(apiUrl("/api/tiktok/account"), { method: "DELETE" });
+  return jsonOrThrow(res);
+}
+
+/** Abre a autorizacao no navegador do sistema.
+ *
+ * Fora do Electron (dev no navegador) cai em window.open, que serve para
+ * testar o fluxo sem empacotar o app.
+ */
+export async function openAuthorizeUrl(url) {
+  const bridge = typeof window !== "undefined" && window.studioNative;
+  if (bridge && bridge.openExternal) {
+    const r = await bridge.openExternal(url);
+    if (!r || !r.ok) throw new Error((r && r.error) || "Nao foi possivel abrir o navegador");
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+}

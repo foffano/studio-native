@@ -113,16 +113,37 @@ arquivos, 50 MB cada, mp4 ou mov.
 
 ---
 
-## Sequência recomendada
+## Sequência recomendada — comece pelo sandbox
 
-Criar o app **não** é o mesmo que submeter à revisão. Vale separar:
+**O desenvolvimento acontece num sandbox, não na versão de produção do app.**
+Isto custou uma tarde para ser descoberto, então vale explicar por quê.
 
-1. **Agora:** preencha o Basic information, marque `Desktop`, adicione os dois
-   escopos e salve. Isso já libera o `client_key` e o `client_secret`, e o
-   desenvolvimento da fase 4 pode começar.
-2. **Antes de submeter:** verifique as URLs (abaixo) e grave o vídeo de
-   demonstração com as fases 4 e 5 prontas.
-3. **Depois:** submeta para revisão.
+Na versão de produção, adicionar produtos e escopos **é** a submissão à revisão:
+o portal cobra o vídeo de demonstração junto e não deixa salvar sem ele. Isso
+fecha um círculo — sem Login Kit configurado o `client_key` é recusado na tela
+de autorização, sem autorização funcionando não há o que filmar, e sem o filme
+o portal não salva o Login Kit.
+
+O sandbox existe exatamente para romper esse círculo: até 5 por app, sem
+revisão, sem verificação de domínio, e com o fluxo de OAuth e upload completo.
+
+1. **Agora:** na página do app, o toggle ao lado do nome → **Sandbox** →
+   **Create Sandbox**. Lá dentro: produtos, escopos, redirect URI,
+   **Apply changes**. Sem vídeo.
+2. **Ainda no sandbox:** *Sandbox settings → Target users → Add account*, com a
+   sua conta do TikTok. **Não é opcional** — no sandbox só as contas listadas
+   ali conseguem autorizar, e sem isso o login falha com tudo mais correto. O
+   resultado pode demorar até uma hora para aparecer.
+3. **Confira Credentials com o sandbox ativo.** Se a `client key` for diferente
+   da de produção, é ela que vai para os secrets do Worker enquanto durar o
+   desenvolvimento — e precisa voltar para a de produção no lançamento.
+4. **Antes de submeter:** verifique as URLs (abaixo) e grave o vídeo de
+   demonstração a partir do sandbox já funcionando.
+5. **Depois:** submeta para revisão, aí sim na versão de produção.
+
+**Limite conhecido do sandbox:** ele não dá acesso ao Content Posting API para
+vídeos **públicos**. O nosso caminho é rascunho (`video.upload`), que deve estar
+dentro — mas isso é para confirmar na fase 5, não é certeza.
 
 ---
 

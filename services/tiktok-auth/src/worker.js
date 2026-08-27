@@ -14,6 +14,7 @@
  *   - não registra corpo de requisição nem token em log.
  *
  * Rotas:
+ *   GET  /tiktok/client-key                                     -> client_key
  *   POST /tiktok/token     { code, code_verifier, redirect_uri } -> tokens
  *   POST /tiktok/refresh   { refresh_token }                     -> tokens
  *   GET  /tiktok/callback  (fallback) devolve o code ao loopback do app
@@ -89,6 +90,23 @@ async function exchange(env, params) {
   return json(data, res.ok ? 200 : res.status);
 }
 
+/**
+ * Devolve o `client_key` ao app.
+ *
+ * O client_key não é segredo — ele aparece na URL de autorização, qualquer um
+ * lê. Mora aqui mesmo assim para que as credenciais do TikTok existam em um
+ * lugar só: embutido no .exe, rotacionar a chave exigiria liberar uma versão
+ * nova para todos os usuários. O app já precisa falar com este Worker para
+ * trocar o code por token, então não há requisição de rede nova no caminho.
+ */
+function handleClientKey(env) {
+  return json({
+    client_key: env.TIKTOK_CLIENT_KEY,
+    scopes: "user.info.basic,video.upload",
+    redirect_uri: ALLOWED_REDIRECTS[0],
+  });
+}
+
 async function handleToken(request, env) {
   const { code, code_verifier, redirect_uri } = await readJson(request);
 
@@ -147,6 +165,10 @@ export default {
 
     if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) {
       return json({ error: "servico_nao_configurado" }, 500);
+    }
+
+    if (request.method === "GET" && url.pathname === "/tiktok/client-key") {
+      return handleClientKey(env);
     }
 
     if (request.method === "POST" && url.pathname === "/tiktok/token") {

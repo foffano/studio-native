@@ -20,13 +20,21 @@ de token). O plano gratuito da Cloudflare dá 100 mil por dia.
 
 | Método | Rota | Corpo | Devolve |
 | --- | --- | --- | --- |
+| `GET` | `/tiktok/client-key` | — | `client_key`, escopos e redirect padrão |
 | `POST` | `/tiktok/token` | `{ code, code_verifier, redirect_uri }` | tokens do TikTok |
 | `POST` | `/tiktok/refresh` | `{ refresh_token }` | tokens renovados |
 | `GET` | `/tiktok/callback` | — | redireciona o `code` ao loopback do app *(fallback, veja abaixo)* |
 | `GET` | `/health` | — | `{ ok: true }` |
 
 O status do TikTok é repassado como está, para o app distinguir erro da
-plataforma de erro nosso.
+plataforma de erro nosso. **Cuidado:** o TikTok responde `200` mesmo quando
+recusa a troca — o erro vem no corpo, em `error`. Quem consome precisa olhar o
+corpo, não só o status.
+
+O `client_key` sai por `/tiktok/client-key` de propósito. Ele é público (aparece
+na URL de autorização), mas se ficasse embutido no `.exe`, rotacionar a chave
+exigiria liberar versão nova para todos os usuários. Assim as credenciais do
+TikTok existem em um lugar só.
 
 ### Proteções
 

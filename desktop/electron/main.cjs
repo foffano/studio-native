@@ -92,6 +92,33 @@ function setupAutoUpdater() {
     await autoUpdater.downloadUpdate();
     return updateState;
   });
+  // Abrir a tela de autorizacao do TikTok no navegador do sistema.
+  //
+  // O OAuth precisa acontecer fora do app: dentro de uma BrowserWindow nossa,
+  // nos teriamos acesso ao cookie de sessao do TikTok -- o TikTok recusa isso,
+  // e com razao. Fora, quem digita a senha e o navegador do usuario, e nos so
+  // recebemos o `code` de volta na 43117.
+  //
+  // A allowlist de host existe porque este canal atravessa o contextIsolation:
+  // sem ela, qualquer script na janela poderia abrir qualquer coisa no
+  // navegador do usuario, com um clique so.
+  ipcMain.handle("shell:open-external", (_event, url) => {
+    let parsed;
+    try {
+      parsed = new URL(String(url));
+    } catch (_) {
+      return { ok: false, error: "URL invalida" };
+    }
+    const hostOk =
+      parsed.hostname === "tiktok.com" || parsed.hostname.endsWith(".tiktok.com");
+    if (parsed.protocol !== "https:" || !hostOk) {
+      console.warn("[StudioNative] openExternal recusado:", parsed.origin);
+      return { ok: false, error: "Destino nao permitido" };
+    }
+    shell.openExternal(parsed.toString());
+    return { ok: true };
+  });
+
   ipcMain.handle("updates:install", () => {
     if (!isDev) autoUpdater.quitAndInstall(false, true);
     return updateState;
