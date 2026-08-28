@@ -1,22 +1,198 @@
 # Studio Native
 
-App **desktop nativo para Windows** (Electron + React) que gera vídeos com IA: você envia um vídeo, a IA (via **OpenRouter**) cria frases curtas de impacto (e, opcionalmente, narração por voz via **ElevenLabs**), e o texto é sobreposto no vídeo **localmente** com **MoviePy** + **Pillow** + **ffmpeg**. Para cada vídeo você escolhe quantas variações (frases diferentes) quer gerar.
+Gera videos verticais curtos com apoio de IA e os envia para o seu TikTok — tudo
+no seu computador.
 
-> **Privacidade:** o vídeo **nunca** é enviado para a OpenRouter/ElevenLabs. As APIs recebem apenas texto (tema/contexto e a fala). Todo o processamento do vídeo acontece na sua máquina.
+Voce escolhe um video, a IA (via **OpenRouter**) escreve a frase que aparece na
+tela, a legenda do post e ate 5 hashtags. O texto e sobreposto **localmente** com
+MoviePy + Pillow + ffmpeg. Opcionalmente ha narracao por voz (**ElevenLabs**). No
+fim, o video vai para o seu TikTok com um clique.
+
+Roda de duas formas, com o mesmo codigo: **app nativo** (Electron, Windows) ou
+**no navegador** — e, nesse modo, da para abrir pelo celular por um tunel.
+
+> **Privacidade:** o video **nunca** e enviado a OpenRouter nem a ElevenLabs —
+> elas recebem so texto. Na publicacao, o MP4 vai do seu computador **direto**
+> para o TikTok, sem passar por servidor intermediario. O unico servico proprio
+> que existe (um Cloudflare Worker) guarda o `client_secret` do TikTok e troca
+> codigos por token; ele nao recebe, nao armazena e nunca ve nenhum video.
+
+---
+
+## Como instalar
+
+### O jeito rapido: instalador do Windows
+
+1. Abra a pagina de releases:
+   **https://github.com/foffano/studio-native/releases/latest**
+2. Baixe **`Studio-Native-Setup-x.y.z.exe`** (o instalador). Se preferir nao
+   instalar nada, baixe **`Studio-Native-x.y.z.exe`** — a versao portatil, que
+   roda direto.
+3. Execute o arquivo. O SmartScreen do Windows vai avisar que o app e de
+   desenvolvedor desconhecido, porque o executavel **nao e assinado
+   digitalmente** — clique em *Mais informacoes* -> *Executar assim mesmo*.
+4. Escolha a pasta de instalacao e conclua.
+
+Nao e preciso instalar Python, Node nem ffmpeg: tudo vai dentro do instalador.
+E por isso que ele tem cerca de 600 MB.
+
+**Atualizacoes** sao automaticas: o app verifica novas releases no GitHub e avisa
+na barra lateral.
+
+### Primeiros passos dentro do app
+
+**1. Coloque a chave da OpenRouter.** Em **Ajustes -> Chaves de API**, cole a
+`OPENROUTER_API_KEY`. Sem ela o app nao gera frase nenhuma. Pegue a sua em
+[openrouter.ai](https://openrouter.ai/keys).
+
+**2. (Opcional) Narracao por voz.** Ainda em Ajustes, cole a
+`ELEVENLABS_API_KEY` e cadastre ao menos uma voz em **Vozes** — nome, Voice ID
+e, se quiser, os parametros. Sem voz cadastrada, o modo com narracao fica
+indisponivel de proposito.
+
+**3. (Opcional) Conecte o TikTok.** Em **Ajustes -> Conta do TikTok**, clique em
+*Conectar TikTok*. Abre o navegador para autorizar, e a tela se atualiza sozinha.
+Veja a ressalva sobre o modo sandbox mais abaixo.
+
+**4. Adicione videos a Biblioteca.** E de la que toda producao comeca. Arraste os
+arquivos para a area de upload; o app normaliza cada um automaticamente (HDR,
+rotacao, `.mov` de iPhone).
+
+**5. Produza.** No card de um video, clique em **Produzir video**, ajuste tema,
+numero de variacoes, altura e estilo do texto, e gere.
+
+Seus dados ficam em `%APPDATA%\StudioNative\`: configuracoes, biblioteca, videos
+produzidos e o catalogo (`studio.db`).
+
+### Abrir no navegador (e usar pelo celular)
+
+O mesmo app roda sem Electron, servido pelo proprio backend:
+
+```bash
+cd desktop && npm run build     # so na primeira vez, ou apos mexer na UI
+python app.py                   # http://127.0.0.1:5050
+```
+
+Com um tunel, isso vira acessivel do celular:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:5050
+```
+
+Abaixo de 720px a interface se reorganiza: a barra lateral vira barra fixa no pe.
+
+> **Atencao: o backend nao tem autenticacao.** Isso nunca importou enquanto ele
+> so escutava em `127.0.0.1`, mas atras de um tunel **quem tiver a URL tem o app
+> inteiro** — pode gerar videos gastando seus creditos, publicar no seu TikTok e
+> alterar as configuracoes. Proteja com **Cloudflare Access** antes de deixar o
+> tunel de pe. Detalhes em [`docs/modo-navegador.md`](docs/modo-navegador.md).
+
+---
+
+## Fluxo de uso
+
+```
+Biblioteca  ->  Produzir video  ->  Produzidos  ->  TikTok
+ (fontes)       (painel de          (acervo,        (caixa de
+                geracao)            metricas)        entrada)
+```
+
+**Biblioteca** guarda os videos-fonte, ja normalizados e reutilizaveis. Todo
+arquivo entra por aqui.
+
+**Produzir video** e uma subpagina de um video especifico — quando voce chega la,
+a fonte ja esta decidida. Ali ficam tema, variacoes, altura da frase, narracao e
+estilo do texto.
+
+**Produzidos** e o acervo das saidas, vindo do catalogo em SQLite: contadores de
+produzidos/publicados, filtro por estado, busca por frase, legenda, tema ou
+hashtag — e o botao de enviar ao TikTok em cada card.
+
+## Publicar no TikTok
+
+O app envia o video para a **Caixa de entrada** do TikTok, nao para o feed. La
+voce revisa, adiciona o produto (o "carrinho laranja") e publica.
+
+- **Login** com Login Kit v2 e PKCE, pelo navegador do sistema. Os tokens ficam
+  cifrados com o **DPAPI do Windows** — amarrados a sua conta de usuario e
+  ilegiveis se o arquivo for copiado para outra maquina. A sessao renova sozinha
+  30 minutos antes de vencer.
+- **O `client_secret` nao viaja no `.exe`.** Qualquer um abriria o pacote do
+  Electron e o leria. Ele mora num Cloudflare Worker
+  ([`services/tiktok-auth/`](services/tiktok-auth/)), que faz a troca de token em
+  nome do app.
+- **O video vai direto** do seu disco para o TikTok, em pedacos. Nenhum servidor
+  nosso o recebe.
+- **Escopos:** `user.info.basic` (mostrar apelido e avatar da conta de destino) e
+  `video.upload` (enviar a caixa de entrada). **Nao** pedimos `video.publish` —
+  publicacao direta no feed pularia justamente a etapa em que voce adiciona o
+  produto, e puxa a revisao mais rigida do TikTok.
+
+### Onde o video aparece (nao e em Rascunhos)
+
+No celular: TikTok -> aba **Caixa de entrada** -> toque na notificacao do video.
+Ele **nao** aparece em Perfil -> Rascunhos: os rascunhos do perfil sao locais do
+aparelho, e um video vindo da API nunca vai parar la.
+
+### A legenda nao vai junto — e o que o app faz sobre isso
+
+O endpoint de caixa de entrada aceita **apenas** o arquivo; nao ha campo de
+legenda, titulo ou hashtag. Campo de titulo existe so no Direct Post, que e o
+caminho que nao usamos.
+
+Entao, depois do envio, o card mostra a legenda com as hashtags e dois caminhos:
+
+- **Copiar legenda** — util se voce finaliza pelo TikTok web.
+- **Ler no celular** — um QR code. Se o app estiver sendo servido por HTTP (modo
+  navegador ou tunel), o QR abre uma **pagina com botao de copiar** no telefone.
+  No Electron, onde nao ha endereco que o celular alcance, o QR carrega o texto.
+
+### Modo sandbox
+
+O app esta em **sandbox** no TikTok, aguardando revisao. Na pratica: so contas
+cadastradas como *target users* no sandbox conseguem conectar — qualquer outra
+recebe `non_sandbox_target`. Todo video enviado fica privado.
+
+Isso nao limita o uso pessoal, e nao ha prazo de validade publicado para o
+sandbox. O que tem relogio e a sessao: o refresh token vale 365 dias e e renovado
+a cada renovacao, entao usar o app ao menos uma vez por ano mantem a conexao viva.
+
+Material do cadastro e o passo a passo do portal estao em
+[`docs/tiktok/formulario-de-cadastro.md`](docs/tiktok/formulario-de-cadastro.md).
+
+---
 
 ## Arquitetura
 
 ```
-+------------------- Electron (janela nativa) -------------------+
-|  React (UI)  <-- HTTP -->  Backend Python (Flask) "sidecar"    |
-|  desktop/                  app.py + MoviePy + ffmpeg + Pillow  |
-+----------------------------------------------------------------+
+        Electron (janela nativa)            ou          Navegador
+   +---------------------------------+        +------------------------+
+   |  React  <--HTTP-->  Flask       |        |  React servido pelo    |
+   |  (file://)          (porta      |        |  proprio Flask, mesma  |
+   |                      sorteada)  |        |  origem  (:5050)       |
+   +---------------------------------+        +------------------------+
+                    |                                     |
+                    +------------------+------------------+
+                                       |
+                        app.py + MoviePy + Pillow + ffmpeg
+                        store.py (SQLite) - tiktok.py - secretbox.py
+                                       |
+                        Cloudflare Worker (so troca de token)
+                        MP4 --> TikTok, direto, sem intermediario
 ```
 
-- **Frontend:** React (Vite), em `desktop/` — recria toda a UI com visual estilo "Studio Native".
-- **Shell:** Electron (`desktop/electron/main.cjs`) abre a janela e **inicia o backend Flask** numa porta local livre (loopback), encerrando-o ao fechar.
-- **Backend:** o mesmo `app.py` de sempre (Flask/MoviePy/ffmpeg/OpenRouter/ElevenLabs). Em produção é empacotado com **PyInstaller** como executável *sidecar* — o usuário final **não precisa de Python**. O **ffmpeg/ffprobe** é empacotado junto (pasta `bin/`) e resolvido via `sys._MEIPASS` quando "congelado".
-- **Chaves de API** são configuradas pela tela **Ajustes** e salvas em `%APPDATA%/StudioNative/config.json` (com fallback para variáveis de ambiente/`.env`). O app funciona sem `.env`.
+- **Frontend:** React (Vite), em `desktop/`.
+- **Shell:** Electron (`desktop/electron/main.cjs`) abre a janela e **sobe o
+  backend Flask** numa porta livre, encerrando-o ao fechar.
+- **Backend:** `app.py` (Flask/MoviePy/ffmpeg/OpenRouter/ElevenLabs). Em producao
+  vira executavel *sidecar* com **PyInstaller** — o usuario final nao precisa de
+  Python. **ffmpeg/ffprobe vao dentro do pacote** (pasta `bin/`), resolvidos via
+  `sys._MEIPASS`; o app nao depende do ffmpeg do sistema.
+- **Modo navegador:** o Flask serve o front construido em `/`. O React detecta e
+  usa a **mesma origem** — e isso que faz funcionar pelo celular, ja que uma URL
+  absoluta com `127.0.0.1` faria o telefone tentar conectar nele mesmo.
+- **Chaves de API** ficam em `%APPDATA%/StudioNative/config.json` (com fallback
+  para variaveis de ambiente/`.env`).
 
 ## Pré-requisitos de desenvolvimento
 
@@ -79,11 +255,11 @@ Para releases funcionarem com atualização automática, publique junto ao insta
 
 ## Como funciona (geração)
 
-1. Você envia um vídeo e (opcionalmente) digita um tema/contexto.
-2. Escolhe quantos vídeos gerar (1 a 10) e a altura/estilo do texto.
-3. O backend pede `N` frases diferentes à OpenRouter (somente texto).
+1. Você adiciona o vídeo à **Biblioteca** (normalizado automaticamente) e clica em **Produzir vídeo**.
+2. Escolhe o tema/contexto, quantos vídeos gerar (1 a 10) e a altura/estilo do texto.
+3. O backend pede `N` conjuntos à OpenRouter — frase da tela, legenda e hashtags — numa chamada só.
 4. Para cada frase, é gerada uma imagem RGBA do texto com Pillow e sobreposta no vídeo com MoviePy.
-5. Você visualiza, baixa e revê no **Histórico** (persistido localmente).
+5. Cada MP4 vira um registro no catálogo e aparece em **Produzidos**, de onde você envia ao TikTok.
 
 ## Legenda do post e hashtags
 
@@ -128,8 +304,8 @@ existe).
 
 **Métricas:** *produzidos* é a contagem de `outputs`; *publicados* conta `output_id`
 **distintos** com publicação concluída — um vídeo postado em duas contas é um vídeo
-publicado, não dois. Aparecem no topo da Biblioteca, e cada vídeo-fonte mostra quantos
-vídeos rendeu e quantos já foram publicados.
+publicado, não dois. Aparecem no topo de **Produzidos**; a Biblioteca mantém só o que é dela — o
+número de fontes e quanto cada uma rendeu.
 
 Endpoints: `GET /api/outputs`, `GET/PATCH/DELETE /api/outputs/<id>`,
 `POST /api/outputs/<id>/caption`, `POST /api/outputs/import`, `GET /api/metrics`.
@@ -167,7 +343,7 @@ PORT=5050
 
 ## Normalização do upload (ffmpeg)
 
-Antes de entregar o vídeo ao MoviePy, **todo upload passa por uma normalização com ffmpeg** (que já precisa estar no PATH). Isso evita falhas com arquivos "difíceis" — por exemplo `.mov` de iPhone com HDR/Dolby Vision (HEVC 10-bit), rotação por metadado (display matrix) e várias streams de dados `mebx`. A normalização gera um MP4 "limpo" e padronizado:
+Antes de entregar o vídeo ao MoviePy, **todo upload passa por uma normalização com ffmpeg** — o binário vai dentro do pacote, então não é preciso tê-lo instalado. Isso evita falhas com arquivos "difíceis" — por exemplo `.mov` de iPhone com HDR/Dolby Vision (HEVC 10-bit), rotação por metadado (display matrix) e várias streams de dados `mebx`. A normalização gera um MP4 "limpo" e padronizado:
 
 - **Mapeia apenas vídeo + áudio** (`-map 0:v:0 -map 0:a:0?`), descartando streams de dados (`mebx`/Core Media Metadata).
 - **Aplica a rotação fisicamente** (autorotação do ffmpeg) e **zera o metadado** de rotação — o vídeo nunca fica "deitado".
@@ -210,9 +386,12 @@ Na seção "Opções de estilo" você pode ajustar tamanho da fonte, FPS, o **es
 
 ```
 app.py                       # backend Flask (sidecar): OpenRouter/ElevenLabs + MoviePy/Pillow/ffmpeg
+                             #   + rotas do TikTok, fila de publicacao e o front no modo navegador
 store.py                     # catalogo de producao em SQLite (outputs/publications/accounts)
 captions.py                  # legenda do post + sanitizacao das hashtags (limite de 5)
-studio_native_backend.spec   # PyInstaller: empacota o backend + fonts + bin/ (ffmpeg)
+tiktok.py                    # Login Kit v2 com PKCE + envio para a caixa de entrada
+secretbox.py                 # cifragem dos tokens em repouso (DPAPI no Windows)
+studio_native_backend.spec   # PyInstaller: backend + fonts + bin/ (ffmpeg) + webui/ (front)
 tools/fetch_ffmpeg.py        # baixa ffmpeg/ffprobe para bin/
 requirements.txt             # deps Python (inclui pyinstaller)
 fonts/Quicksand.ttf          # fonte arredondada empacotada
@@ -226,11 +405,38 @@ desktop/                     # app Electron + React
   electron/preload.cjs       #  expõe a URL do backend ao React
   build/icon.ico             #  ícone do app (gerado do logo)
   src/                       #  React: App, api.js, components/, lib/history.js
+  src/components/            #   LibraryView, ProducedView, GenerateView, SettingsView,
+                             #   TikTokAccount, PublishToTikTok, CaptionQR, CaptionPage
+
+services/                    # servicos proprios (Cloudflare)
+  tiktok-auth/               #  Worker que guarda o client_secret e troca tokens
+  studio-site/               #  paginas publicas em studio.toffa.com.br
+
+docs/                        # plano de produto, modo navegador, cadastro no TikTok
 ```
 
 Saídas de build: `dist/StudioNativeBackend/` (PyInstaller) e `desktop/release/` (instalador). Dados em runtime: `%APPDATA%/StudioNative/` (inclui `studio.db`, o catálogo de produção).
 
-## Próximos passos
+## Documentação
 
-O roteiro completo para publicação no TikTok (OAuth, fila de publicação, produto/carrinho
-e reforma da navegação) está em [`docs/plano-legenda-e-publicacao-tiktok.md`](docs/plano-legenda-e-publicacao-tiktok.md).
+- [`docs/plano-legenda-e-publicacao-tiktok.md`](docs/plano-legenda-e-publicacao-tiktok.md)
+  — o roteiro de sete fases. As fases 1 a 5 e a reforma da navegação estão feitas;
+  o documento registra também onde a API real desmentiu o plano.
+- [`docs/modo-navegador.md`](docs/modo-navegador.md) — rodar no navegador, expor
+  por túnel e por que a autenticação pertence ao túnel, não ao código.
+- [`docs/tiktok/formulario-de-cadastro.md`](docs/tiktok/formulario-de-cadastro.md)
+  — o que preencher no portal do TikTok, com os textos prontos.
+- [`services/tiktok-auth/README.md`](services/tiktok-auth/README.md) — o Worker
+  de troca de tokens: o que ele faz e, principalmente, o que ele não faz.
+
+### O que falta
+
+- **Revisão do TikTok.** Exige um vídeo de demonstração do fluxo completo, que
+  agora é possível gravar. Aprovado, troca-se as credenciais do sandbox pelas de
+  produção nos secrets do Worker.
+- **Fase 6 — produto no vídeo.** Hoje o carrinho é adicionado à mão no TikTok. A
+  Affiliate Creator API permitiria fazer isso pelo app, e exige aprovação separada.
+- **MP4 órfãos.** Arquivos antigos em `outputs/` que nunca entraram no catálogo
+  ficam fora das métricas e da publicação.
+- **Gordura no pacote.** O `collect_all` do PyInstaller puxa dependências que o
+  app não usa; boa parte dos 600 MB do instalador vem daí.
