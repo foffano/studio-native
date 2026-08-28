@@ -125,7 +125,23 @@ function setupAutoUpdater() {
   });
 }
 
-function getFreePort() {
+// Porta preferida do modo navegador. Sortear uma porta livre a cada abertura
+// funcionava enquanto so o Electron falava com o backend -- mas quem quer abrir
+// o app no navegador (ou pelo celular, por um tunel) precisa de um endereco que
+// nao mude. Tentamos esta primeiro e so sorteamos outra se estiver ocupada,
+// porque nunca abrir o app seria um preco alto demais por um numero bonito.
+const PORTA_PREFERIDA = 5050;
+
+function portaLivre(porta) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on("error", () => resolve(false));
+    srv.listen(porta, "127.0.0.1", () => srv.close(() => resolve(true)));
+  });
+}
+
+function portaSorteada() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
     srv.unref();
@@ -135,6 +151,14 @@ function getFreePort() {
       srv.close(() => resolve(port));
     });
   });
+}
+
+async function getFreePort() {
+  if (await portaLivre(PORTA_PREFERIDA)) return PORTA_PREFERIDA;
+  console.log(
+    `[StudioNative] porta ${PORTA_PREFERIDA} ocupada; sorteando outra`
+  );
+  return portaSorteada();
 }
 
 function repoRoot() {

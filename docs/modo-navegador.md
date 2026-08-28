@@ -11,12 +11,22 @@ termina de verdade, que é no telefone.
 
 ## Rodar
 
+### Se você usa o app instalado
+
+Basta deixá-lo aberto: o backend dele já serve o navegador. O endereço aparece
+em **Ajustes → Abrir no navegador**, com botão de copiar e um QR.
+
+O app tenta a porta **5050** e só sorteia outra se ela estiver ocupada — por
+isso o endereço costuma ser sempre `http://127.0.0.1:5050`, mas confira no
+cartão em vez de supor. Antes da versão 1.2.2 a porta era sempre sorteada, e não
+havia como descobri-la sem um `netstat`.
+
+### Se você roda pelo código-fonte
+
 ```bash
 cd desktop && npm run build     # gera desktop/dist (uma vez, ou após mexer na UI)
 python app.py                   # sobe em http://127.0.0.1:5050
 ```
-
-Abra `http://127.0.0.1:5050`. É o mesmo app, sem Electron.
 
 A porta vem de `STUDIO_PORT` (ou `PORT`), e o host de `STUDIO_HOST`.
 

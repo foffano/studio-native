@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getSettings, saveSettings } from "../api.js";
 import { IconCheck } from "./Icons.jsx";
+import BrowserAccess from "./BrowserAccess.jsx";
 import TikTokAccount from "./TikTokAccount.jsx";
 import VoicesManager from "./VoicesManager.jsx";
 
@@ -76,6 +77,8 @@ export default function SettingsView({ onSaved }) {
       {error && <div className="banner banner--error">Erro: {error}</div>}
 
       <TikTokAccount />
+
+      <BrowserAccess />
 
       <div className="card">
         <h3 className="card__title">Chaves de API</h3>
