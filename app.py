@@ -1875,9 +1875,18 @@ PUBLISH_PROGRESS = {}
 PUBLISH_STATUS_TIMEOUT = 300
 PUBLISH_STATUS_INTERVALO = 3
 
-# O TikTok considera concluido com um destes. `SEND_TO_USER_INBOX` e o caso do
-# rascunho; `PUBLISH_COMPLETE` aparece quando o processamento fecha antes.
-PUBLISH_OK = ("PUBLISH_COMPLETE", "SEND_TO_USER_INBOX")
+# Os dois desfechos bons do TikTok, e eles NAO sao a mesma coisa:
+#
+#   SEND_TO_USER_INBOX -- a notificacao chegou na caixa de entrada do criador.
+#                         O video existe, mas ainda nao foi publicado: falta o
+#                         usuario tocar na notificacao e concluir no TikTok.
+#   PUBLISH_COMPLETE   -- no fluxo de upload, significa que o usuario ja fez
+#                         isso. E o unico estado que autoriza dizer "publicado".
+#
+# Tratar os dois como sucesso igual (como este codigo fazia) faz a interface
+# prometer uma publicacao que nao aconteceu.
+STATUS_INBOX = "SEND_TO_USER_INBOX"
+STATUS_PUBLICADO = "PUBLISH_COMPLETE"
 
 
 def _publish_fail(pub_id, mensagem):
@@ -1936,15 +1945,9 @@ def process_publication(pub_id):
             return _publish_fail(pub_id, e)
 
         estado = (info.get("status") or "").upper()
-        if estado in PUBLISH_OK:
+        if estado in (STATUS_INBOX, STATUS_PUBLICADO):
             PUBLISH_PROGRESS.pop(pub_id, None)
-            store.update_publication(
-                pub_id,
-                state="publicado",
-                error="",
-                published_at=datetime.now(timezone.utc).isoformat(),
-            )
-            store.update_output(output["id"], status="publicado")
+            _aplicar_status(pub_id, output["id"], estado)
             return
         if estado == "FAILED":
             return _publish_fail(
@@ -1954,9 +1957,79 @@ def process_publication(pub_id):
     _publish_fail(
         pub_id,
         "O TikTok ainda estava processando depois de 5 minutos. O video pode "
-        "aparecer nos rascunhos mesmo assim -- confira no aplicativo antes de "
-        "enviar de novo.",
+        "chegar na caixa de entrada mesmo assim -- confira no aplicativo antes "
+        "de enviar de novo.",
     )
+
+
+def _aplicar_status(pub_id, output_id, estado_tiktok):
+    """Traduz o status do TikTok para o nosso, sem inventar publicacao."""
+    if estado_tiktok == STATUS_PUBLICADO:
+        store.update_publication(
+            pub_id,
+            state="publicado",
+            error="",
+            published_at=datetime.now(timezone.utc).isoformat(),
+        )
+        store.update_output(output_id, status="publicado")
+    else:
+        store.update_publication(pub_id, state="aguardando", error="")
+        store.update_output(output_id, status="aguardando")
+
+
+def _sincronizar_publicacao(pub, token=None):
+    """Pergunta ao TikTok como esta um envio e atualiza o registro.
+
+    Existe porque o desfecho depende de uma acao que acontece **fora do app** --
+    o usuario abrindo o TikTok e concluindo o post. Sem consultar de novo, o
+    registro ficaria congelado em "aguardando" para sempre.
+    """
+    if not pub or not pub.get("publish_id"):
+        return pub
+    if pub["state"] not in ("aguardando", "processando"):
+        return pub
+    try:
+        if token is None:
+            token, _ = tiktok.valid_access_token()
+        info = tiktok.publish_status(token, pub["publish_id"])
+    except tiktok.TikTokError:
+        # Consultar e melhor-esforco: uma conta trocada ou rede fora nao pode
+        # transformar um envio bem-sucedido em erro.
+        return pub
+
+    estado = (info.get("status") or "").upper()
+    if estado == "FAILED":
+        _publish_fail(pub["id"], info.get("fail_reason") or "O TikTok recusou o video.")
+    elif estado in (STATUS_INBOX, STATUS_PUBLICADO):
+        _aplicar_status(pub["id"], pub["output_id"], estado)
+    return store.get_publication(pub["id"])
+
+
+@app.route("/api/publications/<pub_id>/refresh", methods=["POST"])
+def api_publication_refresh(pub_id):
+    pub = store.get_publication(pub_id)
+    if not pub:
+        return jsonify({"error": "Publicacao nao encontrada"}), 404
+    return jsonify(_publication_view(_sincronizar_publicacao(pub)))
+
+
+@app.route("/api/publications/refresh", methods=["POST"])
+def api_publications_refresh():
+    """Reconsulta todos os envios que ainda dependem de uma acao sua."""
+    pendentes = [
+        p for p in store.list_publications(limit=200)
+        if p["state"] in ("aguardando", "processando") and p.get("publish_id")
+    ]
+    if not pendentes:
+        return jsonify({"atualizadas": 0, "items": []})
+
+    try:
+        token, _ = tiktok.valid_access_token()
+    except tiktok.TikTokError as e:
+        return jsonify({"error": str(e)}), 400
+
+    itens = [_publication_view(_sincronizar_publicacao(p, token)) for p in pendentes]
+    return jsonify({"atualizadas": len(itens), "items": itens})
 
 
 def _publish_worker():
@@ -2002,10 +2075,13 @@ def api_output_publish(output_id):
     if not conta:
         return jsonify({"error": "Conecte a conta do TikTok em Ajustes."}), 400
 
-    # Reenviar um video que ja esta na fila duplicaria o rascunho no TikTok.
+    # Enviar de novo enquanto o anterior ainda esta em transito duplicaria o
+    # video no TikTok sem que o usuario visse o primeiro chegar. Ja reenviar um
+    # que esta "aguardando" e permitido de proposito: a notificacao pode nao ter
+    # aparecido na caixa de entrada, e ai reenviar e a unica saida.
     for p in store.list_publications(limit=500):
         if p["output_id"] == output_id and p["state"] in store.PENDING_STATES:
-            return jsonify({"error": "Este video ja esta na fila."}), 409
+            return jsonify({"error": "Este video ja esta sendo enviado."}), 409
 
     data = request.get_json(silent=True) or {}
     pub = store.add_publication(

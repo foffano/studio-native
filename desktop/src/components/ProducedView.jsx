@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getOutputs, outputUrl } from "../api.js";
+import { getOutputs, outputUrl, refreshPublications } from "../api.js";
 import PublishToTikTok from "./PublishToTikTok.jsx";
 
 /**
@@ -14,7 +14,8 @@ import PublishToTikTok from "./PublishToTikTok.jsx";
 const FILTROS = [
   { id: "todos", rotulo: "Todos" },
   { id: "publicados", rotulo: "Publicados" },
-  { id: "pendentes", rotulo: "Não publicados" },
+  { id: "aguardando", rotulo: "Esperando no TikTok" },
+  { id: "pendentes", rotulo: "Não enviados" },
 ];
 
 export default function ProducedView() {
@@ -27,6 +28,10 @@ export default function ProducedView() {
 
   const carregar = async () => {
     try {
+      // O desfecho de um envio depende de uma acao fora do app -- o usuario
+      // concluindo o post dentro do TikTok. Reconsultamos ao abrir a tela,
+      // senao o registro ficaria em "aguardando" para sempre.
+      await refreshPublications().catch(() => {});
       const r = await getOutputs({ limit: 200 });
       setItens(r.items || []);
       setMetricas(r.metrics || null);
@@ -46,7 +51,8 @@ export default function ProducedView() {
     const termo = busca.trim().toLowerCase();
     return itens.filter((o) => {
       if (filtro === "publicados" && !o.published) return false;
-      if (filtro === "pendentes" && o.published) return false;
+      if (filtro === "aguardando" && !o.awaiting) return false;
+      if (filtro === "pendentes" && (o.published || o.awaiting)) return false;
       if (!termo) return true;
       return [o.phrase, o.caption, o.theme, o.source_name, ...(o.hashtags || [])]
         .join(" ")
@@ -79,6 +85,12 @@ export default function ProducedView() {
               </div>
             )}
           </div>
+          {metricas.awaiting > 0 && (
+            <div className="metric-card">
+              <div className="metric-card__val">{metricas.awaiting}</div>
+              <div className="metric-card__lbl">Esperando no TikTok</div>
+            </div>
+          )}
           <div className="metric-card">
             <div className="metric-card__val">{metricas.not_published}</div>
             <div className="metric-card__lbl">Sem publicar</div>
@@ -170,13 +182,10 @@ function CartaoProduzido({ output }) {
           </div>
         )}
 
-        {output.published ? (
-          <p style={{ color: "#4ade80", fontSize: 13, margin: "0 0 6px" }}>
-            Já enviado ao TikTok
-          </p>
-        ) : (
-          <PublishToTikTok outputId={output.id} />
-        )}
+        <PublishToTikTok
+          outputId={output.id}
+          publicacaoInicial={(output.publications || [])[0] || null}
+        />
       </div>
     </div>
   );

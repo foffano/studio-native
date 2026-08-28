@@ -218,3 +218,17 @@ export async function listPublications(state) {
   const res = await fetch(apiUrl(`/api/publications${q}`));
   return jsonOrThrow(res);
 }
+
+/** Reconsulta um envio no TikTok — o desfecho depende de uma ação fora do app. */
+export async function refreshPublication(pubId) {
+  const res = await fetch(apiUrl(`/api/publications/${pubId}/refresh`), {
+    method: "POST",
+  });
+  return jsonOrThrow(res);
+}
+
+/** Reconsulta de uma vez todos os envios que ainda aguardam ação no TikTok. */
+export async function refreshPublications() {
+  const res = await fetch(apiUrl("/api/publications/refresh"), { method: "POST" });
+  return jsonOrThrow(res);
+}

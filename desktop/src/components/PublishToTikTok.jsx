@@ -5,6 +5,7 @@ import {
   getPublication,
   getTikTokAccount,
   publishOutput,
+  refreshPublication,
 } from "../api.js";
 
 const POLL_MS = 2000;
@@ -24,20 +25,29 @@ function textoDoPost(output) {
   return [legenda, tags].filter(Boolean).join("\n\n");
 }
 
-export default function PublishToTikTok({ outputId }) {
+export default function PublishToTikTok({ outputId, publicacaoInicial = null }) {
   const [conta, setConta] = useState(null);
-  const [pub, setPub] = useState(null);
+  // Sem isto, um vídeo enviado numa sessão anterior voltaria a mostrar o botão
+  // "Enviar", como se nunca tivesse saído daqui.
+  const [pub, setPub] = useState(publicacaoInicial);
   const [erro, setErro] = useState("");
   const [legenda, setLegenda] = useState("");
   const [copiado, setCopiado] = useState(false);
+  const [conferindo, setConferindo] = useState(false);
   const poll = useRef(null);
 
   useEffect(() => {
     getTikTokAccount()
       .then((r) => setConta(r.account || null))
       .catch(() => {});
+    if (publicacaoInicial && publicacaoInicial.state !== "erro") carregarLegenda();
     return () => poll.current && clearInterval(poll.current);
   }, []);
+
+  const carregarLegenda = () =>
+    getOutput(outputId)
+      .then((o) => setLegenda(textoDoPost(o)))
+      .catch(() => {});
 
   function acompanhar(pubId) {
     if (poll.current) clearInterval(poll.current);
@@ -45,16 +55,10 @@ export default function PublishToTikTok({ outputId }) {
       try {
         const p = await getPublication(pubId);
         setPub(p);
-        if (p.state === "publicado" || p.state === "erro") {
+        if (["aguardando", "publicado", "erro"].includes(p.state)) {
           clearInterval(poll.current);
           poll.current = null;
-          if (p.state === "publicado") {
-            // Buscamos a legenda agora, e não no clique, para pegar o que o
-            // usuário salvou no editor — ele costuma ajustar antes de enviar.
-            getOutput(outputId)
-              .then((o) => setLegenda(textoDoPost(o)))
-              .catch(() => {});
-          }
+          if (p.state !== "erro") carregarLegenda();
         }
       } catch (e) {
         clearInterval(poll.current);
@@ -75,16 +79,19 @@ export default function PublishToTikTok({ outputId }) {
     }
   }
 
-  if (!conta) {
-    return (
-      <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-        Conecte a conta do TikTok em Ajustes para enviar seus vídeos.
-      </p>
-    );
+  /** Pergunta ao TikTok se você já concluiu o post do lado de lá. */
+  async function conferir() {
+    if (!pub) return;
+    setConferindo(true);
+    setErro("");
+    try {
+      setPub(await refreshPublication(pub.id));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setConferindo(false);
+    }
   }
-
-  const estado = pub?.state;
-  const andamento = pub?.progresso;
 
   async function copiar() {
     try {
@@ -96,55 +103,109 @@ export default function PublishToTikTok({ outputId }) {
     }
   }
 
-  if (estado === "publicado") {
+  if (!conta) {
+    return (
+      <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+        Conecte a conta do TikTok em Ajustes para enviar seus vídeos.
+      </p>
+    );
+  }
+
+  const estado = pub?.state;
+  const andamento = pub?.progresso;
+
+  // A legenda é a mesma nos dois estados finais, então mora numa função só.
+  const blocoLegenda = legenda && (
+    <div style={{ marginTop: 10 }}>
+      {/* A legenda não vai junto, e não é limitação nossa: o endpoint de caixa
+          de entrada aceita só `source_info`. Campo de título existe apenas no
+          Direct Post, que publica direto no feed. */}
+      <p className="muted" style={{ fontSize: 13, margin: "0 0 6px" }}>
+        A legenda não pode ser enviada junto — o TikTok não aceita texto neste
+        caminho. Cole ao terminar o post:
+      </p>
+      <pre
+        style={{
+          whiteSpace: "pre-wrap",
+          background: "#0f1826",
+          border: "1px solid #1e2a3d",
+          borderRadius: 8,
+          padding: "8px 10px",
+          fontSize: 13,
+          margin: "0 0 6px",
+          fontFamily: "inherit",
+        }}
+      >
+        {legenda}
+      </pre>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn--ghost btn--xs" onClick={copiar}>
+          {copiado ? "Copiado" : "Copiar legenda"}
+        </button>
+        <CaptionQR texto={legenda} outputId={outputId} />
+      </div>
+    </div>
+  );
+
+  // Entregue na caixa de entrada, esperando você terminar dentro do TikTok.
+  if (estado === "aguardando") {
     return (
       <div style={{ marginTop: 8 }}>
-        <p style={{ color: "#4ade80", margin: "0 0 4px" }}>
-          Enviado para @{conta.nickname}
+        <p style={{ color: "#facc15", margin: "0 0 4px" }}>
+          Esperando você no TikTok de @{conta.nickname}
         </p>
-        {/* "Rascunhos" seria a palavra errada aqui, e mandaria o usuário para o
-            lugar errado: os rascunhos do perfil são locais do aparelho e um
-            vídeo vindo da API nunca aparece lá. Ele chega como notificação na
-            Caixa de entrada, e é por ela que o editor abre. Dizer isso também é
-            exigência do TikTok para este fluxo. */}
-        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+        <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>
           Abra o TikTok no celular, vá na aba <strong>Caixa de entrada</strong> e
           toque na notificação do vídeo para revisar, adicionar o produto e
           publicar. Ele não aparece em Rascunhos — esses são só do aparelho.
         </p>
-
-        {legenda && (
-          <div style={{ marginTop: 10 }}>
-            {/* A legenda não vai junto, e não é limitação nossa: o endpoint de
-                caixa de entrada aceita só `source_info`. Campo de título existe
-                apenas no Direct Post, que publica direto no feed e exige
-                video.publish. Então entregamos o texto pronto para colar. */}
-            <p className="muted" style={{ fontSize: 13, margin: "0 0 6px" }}>
-              A legenda não pode ser enviada junto — o TikTok não aceita texto
-              neste caminho. Cole ao terminar o post:
-            </p>
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                background: "#0f1826",
-                border: "1px solid #1e2a3d",
-                borderRadius: 8,
-                padding: "8px 10px",
-                fontSize: 13,
-                margin: "0 0 6px",
-                fontFamily: "inherit",
-              }}
-            >
-              {legenda}
-            </pre>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn--ghost btn--xs" onClick={copiar}>
-                {copiado ? "Copiado" : "Copiar legenda"}
-              </button>
-              <CaptionQR texto={legenda} outputId={outputId} />
-            </div>
-          </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            className="btn btn--ghost btn--xs"
+            disabled={conferindo}
+            onClick={conferir}
+          >
+            {conferindo ? "Conferindo..." : "Já publiquei, conferir"}
+          </button>
+          {/* Reenviar existe porque a notificação pode não chegar: já
+              aconteceu de o TikTok confirmar o envio e nada aparecer na caixa
+              de entrada. O aviso de duplicata é honesto — se as duas chegarem,
+              o usuário vai ver duas. */}
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Enviar este vídeo de novo? Se a notificação anterior chegar, " +
+                    "você verá o mesmo vídeo duas vezes na Caixa de entrada."
+                )
+              ) {
+                enviar();
+              }
+            }}
+          >
+            Enviar de novo
+          </button>
+        </div>
+        {erro && (
+          <p style={{ color: "#f87171", fontSize: 13, marginTop: 6 }}>{erro}</p>
         )}
+        {blocoLegenda}
+      </div>
+    );
+  }
+
+  // Publicado de verdade: o TikTok só devolve PUBLISH_COMPLETE depois que você
+  // concluiu o post do lado de lá.
+  if (estado === "publicado") {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <p style={{ color: "#4ade80", margin: "0 0 4px" }}>
+          Publicado em @{conta.nickname}
+        </p>
+        <button className="btn btn--ghost btn--xs" onClick={enviar}>
+          Enviar de novo
+        </button>
       </div>
     );
   }
@@ -162,7 +223,7 @@ export default function PublishToTikTok({ outputId }) {
   return (
     <>
       <button className="btn btn--ghost btn--block" onClick={enviar}>
-        Enviar para o TikTok de @{conta.nickname}
+        {estado === "erro" ? "Tentar de novo" : `Enviar para o TikTok de @${conta.nickname}`}
       </button>
       {(erro || pub?.error) && (
         <p style={{ color: "#f87171", fontSize: 13, marginTop: 6 }}>

@@ -81,7 +81,16 @@ CREATE TABLE IF NOT EXISTS accounts (
 """
 
 # Estados de publicacao que contam como "publicado de verdade".
+# `publicado` significa publicado **de verdade**: o TikTok so devolve
+# PUBLISH_COMPLETE depois que o criador tocou na notificacao e concluiu o post.
 PUBLISHED_STATES = ("publicado",)
+
+# Entregue na caixa de entrada, esperando o usuario terminar dentro do TikTok.
+# Precisa ser um estado proprio: por muito tempo o app chamou isto de
+# "publicado", o que fazia a interface prometer algo que nao tinha acontecido --
+# e mandava o usuario procurar no perfil um video que estava numa notificacao.
+AWAITING_STATES = ("aguardando",)
+
 PENDING_STATES = ("fila", "enviando", "processando", "agendado")
 
 
@@ -231,6 +240,9 @@ def _attach_publications(items):
         item["published"] = any(
             p["state"] in PUBLISHED_STATES for p in item["publications"]
         )
+        item["awaiting"] = not item["published"] and any(
+            p["state"] in AWAITING_STATES for p in item["publications"]
+        )
     return items
 
 
@@ -305,6 +317,11 @@ def metrics():
         "pending": _count(
             f"SELECT COUNT(*) FROM publications WHERE state IN ({marks_pend})",
             PENDING_STATES,
+        ),
+        "awaiting": _count(
+            f"SELECT COUNT(DISTINCT output_id) FROM publications WHERE state IN "
+            f"({','.join('?' * len(AWAITING_STATES))})",
+            AWAITING_STATES,
         ),
         "failed": _count("SELECT COUNT(*) FROM publications WHERE state = 'erro'"),
         "produced_7d": _count("SELECT COUNT(*) FROM outputs WHERE created_at >= ?", (week,)),
