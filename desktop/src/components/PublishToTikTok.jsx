@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import CaptionQR from "./CaptionQR.jsx";
 import {
   getOutput,
   getPublication,
@@ -136,9 +137,12 @@ export default function PublishToTikTok({ outputId }) {
             >
               {legenda}
             </pre>
-            <button className="btn btn--ghost btn--xs" onClick={copiar}>
-              {copiado ? "Copiado" : "Copiar legenda"}
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn--ghost btn--xs" onClick={copiar}>
+                {copiado ? "Copiado" : "Copiar legenda"}
+              </button>
+              <CaptionQR texto={legenda} />
+            </div>
           </div>
         )}
       </div>
