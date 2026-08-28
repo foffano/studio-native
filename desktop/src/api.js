@@ -1,11 +1,22 @@
-// Resolve a URL do backend Python (sidecar). No Electron vem via preload;
-// rodando o Vite isolado (dev no navegador), usa a porta padrao 5050.
+// Resolve onde esta o backend Python. Sao tres situacoes, e a ordem importa:
+//
+// 1. **Electron**: a URL chega pelo preload, porque o backend sobe numa porta
+//    sorteada e o renderer e carregado de file://.
+// 2. **Vite dev no navegador**: nao ha ponte, e o front esta em :5173 enquanto
+//    o backend esta em :5050. Precisa da URL absoluta.
+// 3. **Servido pelo proprio Flask** (modo navegador, inclusive atraves de um
+//    tunel): usa a **mesma origem**, string vazia. Isto e o que faz o app
+//    funcionar no celular -- uma URL absoluta com 127.0.0.1 faria o telefone
+//    tentar conectar nele mesmo.
 const bridgeUrl =
   typeof window !== "undefined" &&
   window.studioNative &&
   window.studioNative.backendUrl;
 
-export const BACKEND = bridgeUrl || "http://127.0.0.1:5050";
+const emDev =
+  typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
+
+export const BACKEND = bridgeUrl || (emDev ? "http://127.0.0.1:5050" : "");
 
 export const isElectron =
   typeof window !== "undefined" &&

@@ -30,6 +30,14 @@ for pkg in ("moviepy", "imageio", "imageio_ffmpeg"):
 # Assets do backend.
 datas += [("fonts", "fonts")]
 
+# Front construido (Vite), para o modo navegador: o Flask serve estes arquivos
+# em "/". No Electron ele nao e usado -- o renderer carrega de file://.
+if os.path.isdir(os.path.join("desktop", "dist")):
+    datas += [(os.path.join("desktop", "dist"), "webui")]
+else:
+    print("[spec] AVISO: desktop/dist ausente; o modo navegador nao vai "
+          "funcionar no executavel. Rode `cd desktop && npm run build`.")
+
 # ffmpeg/ffprobe empacotados (se baixados em bin/).
 if os.path.isdir("bin"):
     for fn in os.listdir("bin"):

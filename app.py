@@ -75,6 +75,13 @@ USER_DATA_DIR = user_data_dir()
 CONFIG_PATH = USER_DATA_DIR / "config.json"
 UPLOAD_DIR = USER_DATA_DIR / "uploads"
 OUTPUT_DIR = USER_DATA_DIR / "outputs"
+
+# Front construido (Vite). Empacotado como "webui" no bundle; em dev fica em
+# desktop/dist. Serve para o modo navegador -- no Electron o renderer e
+# carregado de file:// e nao passa por aqui.
+WEB_DIR = resource_path("webui")
+if not WEB_DIR.exists():
+    WEB_DIR = Path(__file__).resolve().parent / "desktop" / "dist"
 LIBRARY_DIR = USER_DATA_DIR / "library"
 LIBRARY_STAGING = USER_DATA_DIR / "library_staging"
 LIBRARY_META_PATH = USER_DATA_DIR / "library.json"
@@ -1809,6 +1816,43 @@ def api_settings_post():
     _save_config_file(stored)
 
     return api_settings_get()
+
+
+# ---------------------------------------------------------------------------
+# Modo navegador: o proprio Flask serve o front
+# ---------------------------------------------------------------------------
+# Existe para o app rodar sem Electron -- e, com um tunel apontando para esta
+# porta, ser aberto do celular.
+#
+# O build do Vite usa `base: "./"` (caminhos relativos), porque no Electron ele
+# e carregado de file://. Isso obriga o app a viver numa **unica rota**: em
+# /alguma/coisa os assets seriam procurados em /alguma/assets e nao existiriam.
+# Por isso a pagina de legenda e `/?legenda=<id>`, e nao `/legenda/<id>`.
+
+
+@app.route("/")
+def web_index():
+    if not (WEB_DIR / "index.html").exists():
+        return jsonify(
+            {
+                "error": "Front nao construido",
+                "como_resolver": "cd desktop && npm install && npm run build",
+            }
+        ), 404
+    return send_from_directory(WEB_DIR, "index.html")
+
+
+@app.route("/assets/<path:filename>")
+def web_assets(filename):
+    return send_from_directory(WEB_DIR / "assets", filename)
+
+
+@app.route("/favicon.ico")
+def web_favicon():
+    caminho = WEB_DIR / "favicon.ico"
+    if not caminho.exists():
+        return ("", 204)
+    return send_from_directory(WEB_DIR, "favicon.ico")
 
 
 # ---------------------------------------------------------------------------

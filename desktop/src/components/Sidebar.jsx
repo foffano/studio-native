@@ -171,7 +171,7 @@ export default function Sidebar({
         )}
         {updatesEnabled && !temNovidade && (
           <button
-            className="nav__item"
+            className="nav__item nav__item--pc"
             disabled={updateBusy}
             onClick={() => onUpdateAction("check")}
           >

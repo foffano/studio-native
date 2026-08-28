@@ -141,7 +141,7 @@ export default function PublishToTikTok({ outputId }) {
               <button className="btn btn--ghost btn--xs" onClick={copiar}>
                 {copiado ? "Copiado" : "Copiar legenda"}
               </button>
-              <CaptionQR texto={legenda} />
+              <CaptionQR texto={legenda} outputId={outputId} />
             </div>
           </div>
         )}

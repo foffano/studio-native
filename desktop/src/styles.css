@@ -1590,3 +1590,164 @@ input[type="range"] {
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ==========================================================================
+   Página da legenda (/?legenda=<id>) — destino do QR, feita para o celular
+   ========================================================================== */
+.caption-page {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 24px 18px 48px;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+.caption-page__title {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+.caption-page__frase {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 16px;
+}
+.caption-page__texto {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+  /* Selecionável a dedo: se a área de transferência falhar (Safari sem TLS),
+     segurar o texto continua sendo o caminho. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+.caption-page__btn {
+  width: 100%;
+  /* 52px: alvo de toque confortável. Este botão é a razão da página existir. */
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  cursor: pointer;
+}
+.caption-page__btn.is-ok {
+  background: #16a34a;
+}
+.caption-page__ajuda {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 16px 0 0;
+}
+.caption-page__erro {
+  color: #f87171;
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   Celular: a barra lateral vira barra inferior
+   ==========================================================================
+   Uma coluna de 272px consome metade da largura de um telefone. Abaixo de
+   720px o app vira uma coluna, e a navegação desce para uma barra fixa no pé
+   — onde o polegar alcança.
+
+   O que some no celular é o que não se opera com o polegar num app aberto por
+   túnel: a marca, a lista de histórico e o card de atualização (atualizar o
+   .exe é tarefa de quem está no PC).
+   ========================================================================== */
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    height: 100dvh; /* dvh, não vh: no iOS a barra do Safari come 100vh */
+  }
+
+  .sidebar {
+    order: 2;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    border-right: none;
+    border-top: 1px solid var(--sidebar-border);
+    overflow: visible;
+  }
+
+  .brand,
+  .nav__label,
+  .chat-new,
+  .chat-list,
+  .sidebar__spacer,
+  .update-card,
+  /* Atualizar o instalador e' tarefa de quem esta no PC, nao de quem abriu o
+     app pelo tunel no telefone. */
+  .nav__item--pc {
+    display: none;
+  }
+
+  .nav--main,
+  .sidebar__footer {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    gap: 0;
+  }
+
+  .nav__item {
+    flex-direction: column;
+    gap: 3px;
+    font-size: 11px;
+    padding: 8px 4px;
+    text-align: center;
+    min-height: 52px;
+    justify-content: center;
+  }
+
+  .content {
+    order: 1;
+    padding: 16px 14px 24px;
+    min-height: 0;
+  }
+
+  .content__head {
+    margin-bottom: 12px;
+  }
+  .title {
+    font-size: 22px;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  /* Uma coluna: dois cards de vídeo lado a lado num telefone não cabem. */
+  .results {
+    grid-template-columns: 1fr;
+  }
+  .metrics-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Alvos de toque: 44px é o mínimo que a Apple recomenda. */
+  .btn,
+  .source-tab,
+  .lib-source-item {
+    min-height: 44px;
+  }
+
+  /* Inputs com 16px impedem o iOS de dar zoom ao focar o campo. */
+  .input,
+  .textarea,
+  select {
+    font-size: 16px;
+  }
+}
