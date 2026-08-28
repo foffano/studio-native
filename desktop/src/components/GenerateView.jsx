@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   getLibrary,
   libraryVideoUrl,
@@ -217,6 +217,15 @@ function GenerationForm({
   const [file, setFile] = useState(null);
   const [libraryItem, setLibraryItem] = useState(null);
   const [libraryOptions, setLibraryOptions] = useState([]);
+  const [libraryQuery, setLibraryQuery] = useState("");
+
+  const libraryVisiveis = useMemo(() => {
+    const termo = libraryQuery.trim().toLowerCase();
+    if (!termo) return libraryOptions;
+    return libraryOptions.filter((i) =>
+      [i.name, ...(i.tags || [])].join(" ").toLowerCase().includes(termo)
+    );
+  }, [libraryOptions, libraryQuery]);
   const [drag, setDrag] = useState(false);
   const [opts, setOpts] = useState(DEFAULTS);
   const [audioEnabled, setAudioEnabled] = useState(false);
@@ -408,6 +417,16 @@ function GenerationForm({
 
             {sourceMode === "library" ? (
               <div className="lib-picker">
+                {libraryOptions.length > 6 && (
+                  <input
+                    className="input"
+                    placeholder={`Buscar entre ${libraryOptions.length} vídeos`}
+                    value={libraryQuery}
+                    onChange={(e) => setLibraryQuery(e.target.value)}
+                    disabled={busy}
+                    style={{ marginBottom: 8 }}
+                  />
+                )}
                 {libraryOptions.length === 0 ? (
                   <div className="banner banner--warn" style={{ margin: 0 }}>
                     Nenhum vídeo pronto na biblioteca. Adicione em{" "}
@@ -415,7 +434,12 @@ function GenerationForm({
                   </div>
                 ) : (
                   <div className="lib-source-list">
-                    {libraryOptions.map((item) => (
+                    {libraryVisiveis.length === 0 && (
+                      <div className="muted" style={{ fontSize: 13, padding: 6 }}>
+                        Nenhum vídeo com esse nome ou tag.
+                      </div>
+                    )}
+                    {libraryVisiveis.map((item) => (
                       <button
                         key={item.id}
                         type="button"
@@ -440,7 +464,7 @@ function GenerationForm({
                           <div className="lib-source-item__meta">
                             {fmtDur(item.duration_sec)}
                             {item.generation_count > 0 &&
-                              ` · ${item.generation_count} sessões · ${item.total_outputs} vídeos`}
+                              ` · já usado ${item.generation_count}x`}
                           </div>
                           {(item.tags || []).length > 0 && (
                             <div className="lib-source-item__tags">

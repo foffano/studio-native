@@ -127,9 +127,10 @@ export default function TikTokAccount() {
     <div className="card">
       <h3 className="card__title">Conta do TikTok</h3>
       <p className="card__hint">
-        Conecte a conta para enviar os vídeos gerados aos rascunhos do TikTok. O
-        vídeo vai do seu computador direto para o TikTok — nenhum arquivo passa
-        por servidor nosso.
+        Conecte a conta para enviar os vídeos gerados direto ao TikTok. Eles
+        chegam na Caixa de entrada do app, onde você revisa e publica. O arquivo
+        vai do seu computador para o TikTok — nenhum vídeo passa por servidor
+        nosso.
       </p>
 
       {fase === "carregando" && <p className="muted">Verificando...</p>}

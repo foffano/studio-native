@@ -73,19 +73,9 @@ export default function SettingsView({ onSaved }) {
 
   return (
     <>
-      <div className="content__head">
-        <div>
-          <div className="eyebrow">Configuração</div>
-          <h1 className="title">Ajustes</h1>
-        </div>
-        {savedAt > 0 && (
-          <span className="saved-pill">
-            <IconCheck width={15} height={15} /> Salvo
-          </span>
-        )}
-      </div>
-
       {error && <div className="banner banner--error">Erro: {error}</div>}
+
+      <TikTokAccount />
 
       <div className="card">
         <h3 className="card__title">Chaves de API</h3>
@@ -198,14 +188,18 @@ export default function SettingsView({ onSaved }) {
         </div>
       </div>
 
-      <TikTokAccount />
-
       <div className="card">
         <button className="btn btn--primary" disabled={saving} onClick={save}>
           {saving ? "Salvando..." : "Salvar ajustes"}
         </button>
+        {savedAt > 0 && (
+          <span className="saved-pill" style={{ marginLeft: 12 }}>
+            <IconCheck width={15} height={15} /> Salvo
+          </span>
+        )}
         <span className="muted" style={{ marginLeft: 14 }}>
-          As alterações valem imediatamente, sem reiniciar o app.
+          Vale para as chaves e a renderização. Vozes e a conta do TikTok
+          salvam sozinhas.
         </span>
       </div>
     </>

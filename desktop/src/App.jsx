@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import GenerateView from "./components/GenerateView.jsx";
+import ProducedView from "./components/ProducedView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
 import { getConfig, importHistoryToBackend } from "./api.js";
@@ -36,6 +37,7 @@ async function migrateHistoryOnce() {
 
 const HEADINGS = {
   generate: { eyebrow: "Estúdio", title: "Gerar vídeo" },
+  produced: { eyebrow: "Estúdio", title: "Produzidos" },
   library: { eyebrow: "Estúdio", title: "Biblioteca de vídeos" },
   settings: { eyebrow: "Configuração", title: "Ajustes" },
 };
@@ -146,14 +148,15 @@ export default function App() {
       />
 
       <main className="content">
+        <div className="content__head">
+          <div>
+            <div className="eyebrow">{head.eyebrow}</div>
+            <h1 className="title">{head.title}</h1>
+          </div>
+        </div>
+
         {view === "generate" && (
           <>
-            <div className="content__head">
-              <div>
-                <div className="eyebrow">{head.eyebrow}</div>
-                <h1 className="title">{head.title}</h1>
-              </div>
-            </div>
             <GenerateView
               config={config}
               activeEntry={activeEntry}
@@ -164,6 +167,8 @@ export default function App() {
             />
           </>
         )}
+
+        {view === "produced" && <ProducedView />}
 
         {view === "library" && (
           <LibraryView onUseForGeneration={handleUseLibrary} />

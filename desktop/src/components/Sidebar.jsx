@@ -14,6 +14,8 @@ import {
   IconTrash,
   IconFolder,
   IconVideo,
+  IconHistory,
+  IconRefresh,
 } from "./Icons.jsx";
 
 function updateButtonLabel(status) {
@@ -53,6 +55,13 @@ export default function Sidebar({
   const updateBusy =
     updateStatus === "checking" || updateStatus === "downloading";
 
+  // O card ocupava o rodape para sempre, so para dizer "verifique novas
+  // releases no GitHub" -- uma tarefa que ninguem tem. Ele agora aparece
+  // quando ha algo real acontecendo; fora disso, "Verificar atualizacoes" e
+  // um item de menu como os outros.
+  const temNovidade =
+    updateStatus !== "idle" && updateStatus !== "not-available";
+
   const handleDelete = (e, id) => {
     e.stopPropagation();
     if (!confirm("Apagar esta geração do histórico?")) return;
@@ -77,6 +86,13 @@ export default function Sidebar({
         >
           <IconVideo />
           Gerar vídeo
+        </button>
+        <button
+          className={"nav__item" + (view === "produced" ? " active" : "")}
+          onClick={() => onNavigate("produced")}
+        >
+          <IconHistory />
+          Produzidos
         </button>
         <button
           className={"nav__item" + (view === "library" ? " active" : "")}
@@ -146,7 +162,7 @@ export default function Sidebar({
       <div className="sidebar__spacer" />
 
       <div className="sidebar__footer">
-        {updatesEnabled && (
+        {updatesEnabled && temNovidade && (
           <div className="update-card">
             <div className="update-card__title">Atualizações</div>
             <div className="update-card__msg">
@@ -160,6 +176,16 @@ export default function Sidebar({
               {updateButtonLabel(updateStatus)}
             </button>
           </div>
+        )}
+        {updatesEnabled && !temNovidade && (
+          <button
+            className="nav__item"
+            disabled={updateBusy}
+            onClick={() => onUpdateAction("check")}
+          >
+            <IconRefresh />
+            Verificar atualizações
+          </button>
         )}
         <button className="nav__item" onClick={onToggleTheme}>
           {theme === "dark" ? <IconSun /> : <IconMoon />}

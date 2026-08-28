@@ -120,15 +120,12 @@ export default function LibraryView({ onUseForGeneration }) {
 
   return (
     <>
-      <div className="content__head">
-        <div>
-          <div className="eyebrow">Estúdio</div>
-          <h1 className="title">Biblioteca de vídeos</h1>
-        </div>
-      </div>
-
       {error && <div className="banner banner--error">Erro: {error}</div>}
 
+      {/* Produzidos e publicados mudaram de casa: agora vivem na aba
+          Produzidos, que e de onde se publica. Repetir os mesmos numeros aqui
+          so criava duas fontes para a mesma pergunta. O quanto cada fonte
+          rendeu continua visivel, por item, no card dela. */}
       <div className="metrics-row">
         <div className="metric-card">
           <div className="metric-card__val">{m.total ?? 0}</div>
@@ -136,23 +133,10 @@ export default function LibraryView({ onUseForGeneration }) {
         </div>
         <div className="metric-card metric-card--accent">
           <div className="metric-card__val">{m.total_produced ?? 0}</div>
-          <div className="metric-card__lbl">Vídeos produzidos</div>
+          <div className="metric-card__lbl">Gerados a partir deles</div>
           {m.produced_7d > 0 && (
             <div className="metric-card__sub">{m.produced_7d} nos últimos 7 dias</div>
           )}
-        </div>
-        <div className="metric-card metric-card--accent">
-          <div className="metric-card__val">{m.total_published ?? 0}</div>
-          <div className="metric-card__lbl">Publicados</div>
-          {(m.total_produced ?? 0) > 0 && (
-            <div className="metric-card__sub">
-              {m.not_published ?? 0} ainda não publicados
-            </div>
-          )}
-        </div>
-        <div className="metric-card">
-          <div className="metric-card__val">{m.pending ?? 0}</div>
-          <div className="metric-card__lbl">Na fila de publicação</div>
         </div>
       </div>
 
