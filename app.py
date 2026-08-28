@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import queue
 import uuid
 from datetime import datetime, timezone
@@ -1808,6 +1809,186 @@ def api_settings_post():
     _save_config_file(stored)
 
     return api_settings_get()
+
+
+# ---------------------------------------------------------------------------
+# Fila de publicacao no TikTok (fase 5)
+# ---------------------------------------------------------------------------
+# Mesmo desenho da fila da Biblioteca: um worker so. Aqui o motivo nao e CPU e
+# sim o TikTok -- o `inbox/video/init` aceita 6 requisicoes por minuto e por
+# token, e enviar dois videos em paralelo estoura isso na primeira rajada.
+
+PUBLISH_QUEUE = queue.Queue()
+PUBLISH_WORKER_LOCK = threading.Lock()
+PUBLISH_WORKER_STARTED = False
+
+# Progresso de bytes vive em RAM, nao no SQLite: sao dezenas de atualizacoes por
+# envio e nenhuma delas importa depois que o envio termina.
+PUBLISH_PROGRESS = {}
+
+# Quanto esperamos o TikTok processar antes de desistir. Nao e falha nossa se
+# estourar -- o video pode aparecer nos rascunhos depois -- e a mensagem diz isso.
+PUBLISH_STATUS_TIMEOUT = 300
+PUBLISH_STATUS_INTERVALO = 3
+
+# O TikTok considera concluido com um destes. `SEND_TO_USER_INBOX` e o caso do
+# rascunho; `PUBLISH_COMPLETE` aparece quando o processamento fecha antes.
+PUBLISH_OK = ("PUBLISH_COMPLETE", "SEND_TO_USER_INBOX")
+
+
+def _publish_fail(pub_id, mensagem):
+    PUBLISH_PROGRESS.pop(pub_id, None)
+    store.update_publication(pub_id, state="erro", error=str(mensagem)[:500])
+
+
+def process_publication(pub_id):
+    """Leva uma publicacao de 'fila' ate 'publicado' ou 'erro'."""
+    pub = store.get_publication(pub_id)
+    if not pub:
+        return
+
+    output = store.get_output(pub["output_id"])
+    if not output:
+        return _publish_fail(pub_id, "O video nao existe mais no catalogo.")
+
+    caminho = OUTPUT_DIR / output["file"]
+    if not caminho.exists():
+        return _publish_fail(pub_id, "O arquivo do video nao esta mais em outputs/.")
+
+    tamanho = caminho.stat().st_size
+
+    try:
+        token, conta = tiktok.valid_access_token()
+    except tiktok.TikTokError as e:
+        return _publish_fail(pub_id, e)
+
+    store.update_publication(pub_id, state="enviando", error="")
+    PUBLISH_PROGRESS[pub_id] = {"enviados": 0, "total": 1, "bytes": tamanho}
+
+    try:
+        publish_id, upload_url, chunk, total = tiktok.init_draft_upload(token, tamanho)
+        store.update_publication(pub_id, publish_id=publish_id)
+        PUBLISH_PROGRESS[pub_id] = {"enviados": 0, "total": total, "bytes": tamanho}
+
+        def progresso(feitos, de):
+            PUBLISH_PROGRESS[pub_id] = {
+                "enviados": feitos, "total": de, "bytes": tamanho
+            }
+
+        tiktok.upload_file(
+            upload_url, str(caminho), chunk, total, tamanho, progresso
+        )
+    except tiktok.TikTokError as e:
+        return _publish_fail(pub_id, e)
+
+    store.update_publication(pub_id, state="processando")
+
+    limite = time.time() + PUBLISH_STATUS_TIMEOUT
+    while time.time() < limite:
+        time.sleep(PUBLISH_STATUS_INTERVALO)
+        try:
+            info = tiktok.publish_status(token, publish_id)
+        except tiktok.TikTokError as e:
+            return _publish_fail(pub_id, e)
+
+        estado = (info.get("status") or "").upper()
+        if estado in PUBLISH_OK:
+            PUBLISH_PROGRESS.pop(pub_id, None)
+            store.update_publication(
+                pub_id,
+                state="publicado",
+                error="",
+                published_at=datetime.now(timezone.utc).isoformat(),
+            )
+            store.update_output(output["id"], status="publicado")
+            return
+        if estado == "FAILED":
+            return _publish_fail(
+                pub_id, info.get("fail_reason") or "O TikTok recusou o video."
+            )
+
+    _publish_fail(
+        pub_id,
+        "O TikTok ainda estava processando depois de 5 minutos. O video pode "
+        "aparecer nos rascunhos mesmo assim -- confira no aplicativo antes de "
+        "enviar de novo.",
+    )
+
+
+def _publish_worker():
+    while True:
+        pub_id = PUBLISH_QUEUE.get()
+        try:
+            process_publication(pub_id)
+        except Exception as e:  # noqa: BLE001
+            # Uma excecao inesperada nao pode matar o worker: a publicacao
+            # seguinte ficaria na fila para sempre, sem ninguem para atende-la.
+            _publish_fail(pub_id, f"Erro inesperado: {e}")
+        finally:
+            PUBLISH_QUEUE.task_done()
+
+
+def _ensure_publish_worker():
+    global PUBLISH_WORKER_STARTED
+    with PUBLISH_WORKER_LOCK:
+        if PUBLISH_WORKER_STARTED:
+            return
+        threading.Thread(
+            target=_publish_worker, name="tiktok-publish-worker", daemon=True
+        ).start()
+        PUBLISH_WORKER_STARTED = True
+
+
+def _publication_view(pub):
+    """Publicacao + progresso de bytes, como a UI precisa ver."""
+    if not pub:
+        return None
+    out = dict(pub)
+    out["progresso"] = PUBLISH_PROGRESS.get(pub["id"])
+    return out
+
+
+@app.route("/api/outputs/<output_id>/publish", methods=["POST"])
+def api_output_publish(output_id):
+    output = store.get_output(output_id)
+    if not output:
+        return jsonify({"error": "Video nao encontrado"}), 404
+
+    conta = store.active_account("tiktok")
+    if not conta:
+        return jsonify({"error": "Conecte a conta do TikTok em Ajustes."}), 400
+
+    # Reenviar um video que ja esta na fila duplicaria o rascunho no TikTok.
+    for p in store.list_publications(limit=500):
+        if p["output_id"] == output_id and p["state"] in store.PENDING_STATES:
+            return jsonify({"error": "Este video ja esta na fila."}), 409
+
+    data = request.get_json(silent=True) or {}
+    pub = store.add_publication(
+        output_id=output_id,
+        account_id=conta["id"],
+        mode="draft",
+        product_mode=str(data.get("product_mode") or "nenhum"),
+        product_ids=data.get("product_ids") or [],
+    )
+    _ensure_publish_worker()
+    PUBLISH_QUEUE.put(pub["id"])
+    return jsonify(_publication_view(pub))
+
+
+@app.route("/api/publications", methods=["GET"])
+def api_publications_list():
+    estado = request.args.get("state") or None
+    itens = [_publication_view(p) for p in store.list_publications(state=estado)]
+    return jsonify({"items": itens})
+
+
+@app.route("/api/publications/<pub_id>", methods=["GET"])
+def api_publication_get(pub_id):
+    pub = store.get_publication(pub_id)
+    if not pub:
+        return jsonify({"error": "Publicacao nao encontrada"}), 404
+    return jsonify(_publication_view(pub))
 
 
 # ---------------------------------------------------------------------------

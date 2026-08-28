@@ -489,3 +489,155 @@ def valid_access_token():
 
     conta = store.update_account(conta["id"], **campos)
     return novo, conta
+
+
+# ---------------------------------------------------------------------------
+# Publicar nos rascunhos (Content Posting API)
+# ---------------------------------------------------------------------------
+# Caminho de rascunho, nao Direct Post. Dois motivos: o rascunho e o que permite
+# o criador adicionar o produto (o "carrinho laranja") antes de publicar, e ele
+# exige apenas `video.upload` -- o `video.publish` do Direct Post puxa a revisao
+# mais rigida do TikTok.
+#
+# Consequencia pratica: **o `creator_info/query` nao entra aqui**. Ele so e
+# obrigatorio no Direct Post e responde `scope_not_authorized` com o nosso
+# token, porque exige `video.publish`. O plano original mandava chama-lo antes
+# de mostrar a tela; seria uma parede.
+
+INBOX_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
+STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
+
+# Regras de fatiamento do TikTok. Cada pedaco tem que ter no minimo 5 MB e no
+# maximo 64 MB -- exceto o ultimo, que absorve o resto e pode passar disso.
+MIN_CHUNK = 5_000_000
+MAX_CHUNK = 64_000_000
+CHUNK_ALVO = 10_000_000
+
+# Upload de video e lento e nao pode morrer por impaciencia do cliente.
+UPLOAD_TIMEOUT = 600
+
+MIMES = {".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm"}
+
+
+def _api(url, token, payload=None):
+    """Chamada ao TikTok que trata `error.code` em vez de confiar no status."""
+    try:
+        res = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=UTF-8",
+            },
+            json=payload if payload is not None else None,
+            timeout=HTTP_TIMEOUT,
+        )
+        data = res.json()
+    except (requests.RequestException, ValueError) as e:
+        raise TikTokError(f"Falha ao falar com o TikTok: {e}")
+
+    erro = (data.get("error") or {}) if isinstance(data, dict) else {}
+    codigo = erro.get("code")
+    # `ok` e o sucesso explicito. Ausencia de erro nao serve como sinal: o
+    # TikTok responde 200 com corpo de erro dentro.
+    if codigo and codigo != "ok":
+        raise TikTokError(
+            f"{erro.get('message') or codigo} "
+            f"(codigo {codigo}, log {erro.get('log_id') or 'sem id'})"
+        )
+    return data.get("data") or {}
+
+
+def plan_chunks(video_size):
+    """Decide (chunk_size, total_chunk_count) para um arquivo.
+
+    Tres regras do TikTok, e a terceira e a que quebra implementacao ingenua:
+
+    1. Video menor que 5 MB vai inteiro, com `chunk_size` igual ao tamanho.
+    2. Cada pedaco fica entre 5 MB e 64 MB.
+    3. `total_chunk_count` e o tamanho **dividido para baixo** pelo chunk_size --
+       ou seja, o resto nao vira um pedaco extra: ele e engolido pelo ultimo,
+       que por isso pode passar do chunk_size. Quem calcula com arredondamento
+       para cima manda um pedaco a mais e o upload e recusado.
+    """
+    if video_size <= 0:
+        raise TikTokError("O arquivo de video esta vazio.")
+    if video_size < MIN_CHUNK:
+        return video_size, 1
+
+    chunk = min(CHUNK_ALVO, video_size)
+    chunk = max(MIN_CHUNK, min(chunk, MAX_CHUNK))
+    total = max(1, video_size // chunk)
+    return chunk, total
+
+
+def init_draft_upload(token, video_size):
+    """Reserva o envio e devolve (publish_id, upload_url, chunk_size, total)."""
+    chunk, total = plan_chunks(video_size)
+    data = _api(
+        INBOX_INIT_URL,
+        token,
+        {
+            "source_info": {
+                "source": "FILE_UPLOAD",
+                "video_size": video_size,
+                "chunk_size": chunk,
+                "total_chunk_count": total,
+            }
+        },
+    )
+    publish_id = data.get("publish_id")
+    upload_url = data.get("upload_url")
+    if not publish_id or not upload_url:
+        raise TikTokError("O TikTok nao devolveu publish_id/upload_url.")
+    return publish_id, upload_url, chunk, total
+
+
+def upload_file(upload_url, path, chunk_size, total, video_size, progresso=None):
+    """Envia o arquivo em pedacos, direto do disco do usuario para o TikTok.
+
+    O MP4 nao passa por servidor nosso em momento nenhum -- e isso que mantem o
+    Worker no plano gratuito e e o que a politica de privacidade publicada
+    promete.
+    """
+    mime = MIMES.get(os.path.splitext(path)[1].lower(), "video/mp4")
+
+    with open(path, "rb") as f:
+        for i in range(total):
+            inicio = i * chunk_size
+            # O ultimo pedaco vai ate o fim do arquivo, engolindo o resto da
+            # divisao. Nao e `inicio + chunk_size - 1`.
+            fim = video_size - 1 if i == total - 1 else inicio + chunk_size - 1
+            f.seek(inicio)
+            corpo = f.read(fim - inicio + 1)
+
+            try:
+                res = requests.put(
+                    upload_url,
+                    data=corpo,
+                    headers={
+                        "Content-Type": mime,
+                        "Content-Length": str(len(corpo)),
+                        "Content-Range": f"bytes {inicio}-{fim}/{video_size}",
+                    },
+                    timeout=UPLOAD_TIMEOUT,
+                )
+            except requests.RequestException as e:
+                raise TikTokError(f"Falha ao enviar o video: {e}")
+
+            if res.status_code not in (200, 201, 206):
+                raise TikTokError(
+                    f"O TikTok recusou o pedaco {i + 1}/{total} "
+                    f"(HTTP {res.status_code})"
+                )
+            if progresso:
+                progresso(i + 1, total)
+
+
+def publish_status(token, publish_id):
+    """Consulta como esta o processamento do lado do TikTok."""
+    data = _api(STATUS_URL, token, {"publish_id": publish_id})
+    return {
+        "status": data.get("status") or "",
+        "fail_reason": data.get("fail_reason") or "",
+        "uploaded_bytes": data.get("uploaded_bytes") or 0,
+    }

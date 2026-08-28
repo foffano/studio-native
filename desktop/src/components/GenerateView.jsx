@@ -8,6 +8,7 @@ import {
 } from "../api.js";
 import { beginGeneration } from "../lib/generationManager.js";
 import HeightPicker from "./HeightPicker.jsx";
+import PublishToTikTok from "./PublishToTikTok.jsx";
 import Swatches from "./Swatches.jsx";
 import {
   IconUpload,
@@ -699,6 +700,7 @@ function ResultCard({ r, index, isNew }) {
         <a className="btn btn--ghost btn--block" href={url} download={r.file}>
           <IconDownload width={16} height={16} /> Baixar
         </a>
+        {r.id && <PublishToTikTok outputId={r.id} />}
       </div>
     </div>
   );

@@ -93,6 +93,11 @@ export async function deleteLibraryItem(id) {
 
 // --- Catalogo de producao: os videos que o app gerou -----------------------
 
+export async function getOutput(id) {
+  const res = await fetch(apiUrl(`/api/outputs/${id}`));
+  return jsonOrThrow(res);
+}
+
 export async function getOutputs(params = {}) {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== "" && v != null)
@@ -179,4 +184,26 @@ export async function openAuthorizeUrl(url) {
     return;
   }
   window.open(url, "_blank", "noopener");
+}
+
+// --- Publicar no TikTok ----------------------------------------------------
+
+export async function publishOutput(id, opts = {}) {
+  const res = await fetch(apiUrl(`/api/outputs/${id}/publish`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function getPublication(pubId) {
+  const res = await fetch(apiUrl(`/api/publications/${pubId}`));
+  return jsonOrThrow(res);
+}
+
+export async function listPublications(state) {
+  const q = state ? `?state=${encodeURIComponent(state)}` : "";
+  const res = await fetch(apiUrl(`/api/publications${q}`));
+  return jsonOrThrow(res);
 }
