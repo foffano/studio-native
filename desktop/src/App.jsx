@@ -36,14 +36,17 @@ async function migrateHistoryOnce() {
 }
 
 const HEADINGS = {
-  generate: { eyebrow: "Estúdio", title: "Gerar vídeo" },
+  generate: { eyebrow: "Estúdio", title: "Produzir vídeo" },
   produced: { eyebrow: "Estúdio", title: "Produzidos" },
   library: { eyebrow: "Estúdio", title: "Biblioteca de vídeos" },
   settings: { eyebrow: "Configuração", title: "Ajustes" },
 };
 
 export default function App() {
-  const [view, setView] = useState("generate");
+  // Abre na Biblioteca: nao da para produzir sem uma fonte, e e de la que se
+  // escolhe. Abrir no painel de geracao mostrava um formulario que so podia
+  // avisar "va para a Biblioteca".
+  const [view, setView] = useState("library");
   const [theme, setTheme] = useState(
     () => localStorage.getItem(THEME_KEY) || "light"
   );
@@ -102,10 +105,13 @@ export default function App() {
     }
   };
 
+  // "Nova geracao" agora comeca onde a geracao comeca de verdade: escolhendo
+  // o video.
   const handleNewChat = () => {
     setActiveChatId(null);
     setActiveEntry(null);
-    setView("generate");
+    setLibraryPick(null);
+    setView("library");
   };
 
   const handleSelectChat = (entry) => {
@@ -158,6 +164,7 @@ export default function App() {
         {view === "generate" && (
           <>
             <GenerateView
+              onBackToLibrary={() => setView("library")}
               config={config}
               activeEntry={activeEntry}
               isNewSession={!activeChatId}

@@ -200,8 +200,8 @@ export default function LibraryView({ onUseForGeneration }) {
       {items.length === 0 ? (
         <div className="card" style={{ marginTop: 18 }}>
           <div className="empty">
-            Nenhum vídeo na biblioteca. Adicione arquivos acima para pré-processar
-            e reutilizar nas gerações.
+            Nenhum vídeo na biblioteca. Adicione arquivos acima — é daqui que
+            toda produção começa.
           </div>
         </div>
       ) : (
@@ -303,7 +303,7 @@ function LibraryCard({
             disabled={!ready}
             onClick={onGenerate}
           >
-            Gerar com este vídeo
+            Produzir vídeo
           </button>
           <button className="icon-btn" onClick={onDelete} title="Remover">
             <IconTrash width={15} height={15} />

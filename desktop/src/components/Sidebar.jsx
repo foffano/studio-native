@@ -13,7 +13,6 @@ import {
   IconPlus,
   IconTrash,
   IconFolder,
-  IconVideo,
   IconHistory,
   IconRefresh,
 } from "./Icons.jsx";
@@ -81,11 +80,11 @@ export default function Sidebar({
 
       <nav className="nav nav--main">
         <button
-          className={"nav__item" + (view === "generate" ? " active" : "")}
-          onClick={() => onNavigate("generate")}
+          className={"nav__item" + (view === "library" ? " active" : "")}
+          onClick={() => onNavigate("library")}
         >
-          <IconVideo />
-          Gerar vídeo
+          <IconFolder />
+          Biblioteca
         </button>
         <button
           className={"nav__item" + (view === "produced" ? " active" : "")}
@@ -93,13 +92,6 @@ export default function Sidebar({
         >
           <IconHistory />
           Produzidos
-        </button>
-        <button
-          className={"nav__item" + (view === "library" ? " active" : "")}
-          onClick={() => onNavigate("library")}
-        >
-          <IconFolder />
-          Biblioteca
         </button>
       </nav>
 

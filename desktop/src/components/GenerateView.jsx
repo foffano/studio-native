@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  getLibrary,
   libraryVideoUrl,
   outputUrl,
   updateOutput,
@@ -11,7 +10,7 @@ import HeightPicker from "./HeightPicker.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
 import Swatches from "./Swatches.jsx";
 import {
-  IconUpload,
+  IconVideo,
   IconDownload,
   IconMic,
   IconPlus,
@@ -79,6 +78,7 @@ export default function GenerateView({
   libraryPick,
   onLibraryPickConsumed,
   onGenerationStarted,
+  onBackToLibrary,
 }) {
   if (!isNewSession && activeEntry) {
     return <GenerationSession entry={activeEntry} config={config} />;
@@ -90,6 +90,7 @@ export default function GenerateView({
       libraryPick={libraryPick}
       onLibraryPickConsumed={onLibraryPickConsumed}
       onGenerationStarted={onGenerationStarted}
+      onBackToLibrary={onBackToLibrary}
     />
   );
 }
@@ -212,21 +213,13 @@ function GenerationForm({
   libraryPick,
   onLibraryPickConsumed,
   onGenerationStarted,
+  onBackToLibrary,
 }) {
-  const [sourceMode, setSourceMode] = useState("library");
-  const [file, setFile] = useState(null);
-  const [libraryItem, setLibraryItem] = useState(null);
-  const [libraryOptions, setLibraryOptions] = useState([]);
-  const [libraryQuery, setLibraryQuery] = useState("");
-
-  const libraryVisiveis = useMemo(() => {
-    const termo = libraryQuery.trim().toLowerCase();
-    if (!termo) return libraryOptions;
-    return libraryOptions.filter((i) =>
-      [i.name, ...(i.tags || [])].join(" ").toLowerCase().includes(termo)
-    );
-  }, [libraryOptions, libraryQuery]);
-  const [drag, setDrag] = useState(false);
+  // A fonte chega decidida da Biblioteca. Este painel nao escolhe video: ele
+  // configura a geracao de um video que ja foi escolhido. Enquanto havia um
+  // seletor aqui, existiam duas listagens da mesma biblioteca no app, e a
+  // pergunta "onde escolho o video?" tinha duas respostas.
+  const [libraryItem, setLibraryItem] = useState(libraryPick || null);
   const [opts, setOpts] = useState(DEFAULTS);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [voiceSel, setVoiceSel] = useState("");
@@ -245,44 +238,18 @@ function GenerationForm({
 
   useEffect(() => {
     if (libraryPick && libraryPick.status === "ready") {
-      setSourceMode("library");
       setLibraryItem(libraryPick);
-      setFile(null);
       onLibraryPickConsumed && onLibraryPickConsumed();
     }
   }, [libraryPick]);
 
-  useEffect(() => {
-    getLibrary()
-      .then((data) => {
-        const ready = (data.items || []).filter((i) => i.status === "ready");
-        setLibraryOptions(ready);
-        if (sourceMode === "library" && !libraryItem && ready.length > 0) {
-          setLibraryItem(ready[0]);
-        }
-      })
-      .catch(() => {});
-  }, [sourceMode]);
-
-  const onFiles = (files) => {
-    if (files && files.length) {
-      setFile(files[0]);
-      setSourceMode("upload");
-      setLibraryItem(null);
-    }
-  };
-
-  const hasSource = sourceMode === "library" ? !!libraryItem : !!file;
+  const hasSource = !!libraryItem;
   const clampNum = (v) => Math.max(1, Math.min(10, parseInt(v) || 1));
 
   async function start() {
     setError("");
     if (!hasSource) {
-      setError(
-        sourceMode === "library"
-          ? "Selecione um vídeo da biblioteca."
-          : "Selecione um vídeo primeiro."
-      );
+      setError("Escolha um vídeo na Biblioteca para produzir.");
       return;
     }
 
@@ -313,12 +280,12 @@ function GenerationForm({
     }
 
     const sourceName =
-      sourceMode === "library" ? libraryItem.name : file.name;
+      libraryItem.name;
 
     const meta = {
       sourceName,
-      libraryId: sourceMode === "library" ? libraryItem.id : "",
-      fromLibrary: sourceMode === "library",
+      libraryId: libraryItem.id,
+      fromLibrary: true,
       theme: opts.theme.trim(),
       vertical: opts.vertical,
       num: clampNum(opts.num),
@@ -337,11 +304,7 @@ function GenerationForm({
     };
 
     const fd = new FormData();
-    if (sourceMode === "library") {
-      fd.append("library_id", libraryItem.id);
-    } else {
-      fd.append("video", file);
-    }
+    fd.append("library_id", libraryItem.id);
     fd.append("theme", meta.theme);
     fd.append("num_variations", String(meta.num));
     fd.append("font_size", String(meta.fontSize));
@@ -387,132 +350,45 @@ function GenerationForm({
           <div className="card">
             <h3 className="card__title">
               <span className="dot">
-                <IconUpload width={18} height={18} />
+                <IconVideo width={18} height={18} />
               </span>
-              Vídeo de origem
+              Vídeo escolhido
             </h3>
-            <p className="card__hint">
-              Escolha um vídeo da biblioteca (com miniatura) ou envie um arquivo
-              novo.
-            </p>
 
-            <div className="source-tabs">
-              <button
-                type="button"
-                className={"source-tab" + (sourceMode === "library" ? " active" : "")}
-                disabled={busy}
-                onClick={() => setSourceMode("library")}
-              >
-                <IconFolder width={16} height={16} /> Biblioteca
-              </button>
-              <button
-                type="button"
-                className={"source-tab" + (sourceMode === "upload" ? " active" : "")}
-                disabled={busy}
-                onClick={() => setSourceMode("upload")}
-              >
-                <IconUpload width={16} height={16} /> Upload novo
-              </button>
-            </div>
-
-            {sourceMode === "library" ? (
-              <div className="lib-picker">
-                {libraryOptions.length > 6 && (
-                  <input
-                    className="input"
-                    placeholder={`Buscar entre ${libraryOptions.length} vídeos`}
-                    value={libraryQuery}
-                    onChange={(e) => setLibraryQuery(e.target.value)}
-                    disabled={busy}
-                    style={{ marginBottom: 8 }}
-                  />
-                )}
-                {libraryOptions.length === 0 ? (
-                  <div className="banner banner--warn" style={{ margin: 0 }}>
-                    Nenhum vídeo pronto na biblioteca. Adicione em{" "}
-                    <b>Biblioteca</b>.
+            {libraryItem ? (
+              <div className="lib-source-item active" style={{ cursor: "default" }}>
+                <div className="lib-source-item__thumb">
+                  {libraryItem.file ? (
+                    <video
+                      src={libraryVideoUrl(libraryItem.file)}
+                      muted
+                      preload="metadata"
+                    />
+                  ) : null}
+                </div>
+                <div className="lib-source-item__info">
+                  <div className="lib-source-item__name">{libraryItem.name}</div>
+                  <div className="lib-source-item__meta">
+                    {fmtDur(libraryItem.duration_sec)}
                   </div>
-                ) : (
-                  <div className="lib-source-list">
-                    {libraryVisiveis.length === 0 && (
-                      <div className="muted" style={{ fontSize: 13, padding: 6 }}>
-                        Nenhum vídeo com esse nome ou tag.
-                      </div>
-                    )}
-                    {libraryVisiveis.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={
-                          "lib-source-item" +
-                          (libraryItem?.id === item.id ? " active" : "")
-                        }
-                        disabled={busy}
-                        onClick={() => setLibraryItem(item)}
-                      >
-                        <div className="lib-source-item__thumb">
-                          {item.file ? (
-                            <video
-                              src={libraryVideoUrl(item.file)}
-                              muted
-                              preload="metadata"
-                            />
-                          ) : null}
-                        </div>
-                        <div className="lib-source-item__info">
-                          <div className="lib-source-item__name">{item.name}</div>
-                          <div className="lib-source-item__meta">
-                            {fmtDur(item.duration_sec)}
-                            {item.generation_count > 0 &&
-                              ` · já usado ${item.generation_count}x`}
-                          </div>
-                          {(item.tags || []).length > 0 && (
-                            <div className="lib-source-item__tags">
-                              {item.tags.slice(0, 3).map((t) => (
-                                <span className="chip" key={t}>
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                </div>
               </div>
             ) : (
-              <>
-                <label
-                  className={
-                    "drop" + (drag ? " drag" : "") + (file ? " has-file" : "")
-                  }
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDrag(true);
-                  }}
-                  onDragLeave={() => setDrag(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDrag(false);
-                    onFiles(e.dataTransfer.files);
-                  }}
-                >
-                  <div className="drop__icon">
-                    <IconUpload width={26} height={26} />
-                  </div>
-                  <div className="drop__title">Solte o vídeo aqui</div>
-                  <input
-                    type="file"
-                    accept="video/*"
-                    hidden
-                    disabled={busy}
-                    onChange={(e) => onFiles(e.target.files)}
-                  />
-                </label>
-                {file && <div className="filechip">🎬 {file.name}</div>}
-              </>
+              <div className="banner banner--warn" style={{ margin: 0 }}>
+                Nenhum vídeo escolhido. Volte à <b>Biblioteca</b> e clique em
+                produzir a partir de um vídeo.
+              </div>
             )}
+
+            <button
+              type="button"
+              className="btn btn--ghost btn--xs"
+              style={{ marginTop: 10 }}
+              disabled={busy}
+              onClick={() => onBackToLibrary && onBackToLibrary()}
+            >
+              <IconFolder width={14} height={14} /> Trocar vídeo
+            </button>
 
             <div className="field" style={{ marginTop: 18 }}>
               <label className="field__label">Tema / contexto (opcional)</label>
