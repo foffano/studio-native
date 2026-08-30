@@ -38,7 +38,20 @@ export default function LibraryView({ onUseForGeneration }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [tagDraft, setTagDraft] = useState({});
+  const [busca, setBusca] = useState("");
+  const [tagFiltro, setTagFiltro] = useState("");
+  // O upload fica recolhido quando ja existe acervo. Numa biblioteca vazia ele
+  // se abre sozinho: e a unica acao possivel, e a orientacao de estado vazio e
+  // justamente mostrar a acao em vez de uma tela em branco.
+  const [uploadAberto, setUploadAberto] = useState(false);
   const pollRef = useRef(null);
+
+  const visiveis = items.filter((i) => {
+    if (tagFiltro && !(i.tags || []).includes(tagFiltro)) return false;
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return true;
+    return [i.name, ...(i.tags || [])].join(" ").toLowerCase().includes(termo);
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -123,50 +136,68 @@ export default function LibraryView({ onUseForGeneration }) {
     <>
       {error && <div className="banner banner--error">Erro: {error}</div>}
 
-      {/* Produzidos e publicados mudaram de casa: agora vivem na aba
-          Produzidos, que e de onde se publica. Repetir os mesmos numeros aqui
-          so criava duas fontes para a mesma pergunta. O quanto cada fonte
-          rendeu continua visivel, por item, no card dela. */}
-      <div className="metrics-row">
-        <div className="metric-card">
-          <div className="metric-card__val">{m.total ?? 0}</div>
-          <div className="metric-card__lbl">Vídeos-fonte</div>
-        </div>
-        <div className="metric-card metric-card--accent">
-          <div className="metric-card__val">{m.total_produced ?? 0}</div>
-          <div className="metric-card__lbl">Gerados a partir deles</div>
-          {m.produced_7d > 0 && (
-            <div className="metric-card__sub">{m.produced_7d} nos últimos 7 dias</div>
-          )}
-        </div>
+      {/* Uma faixa de numeros, nao dois cartoes competindo com o conteudo.
+          Produzidos e publicados mudaram de casa para a aba Produzidos; aqui
+          fica so o que e da Biblioteca. */}
+      <div className="statline">
+        <span className="statline__item">
+          <strong>{m.total ?? 0}</strong> vídeos-fonte
+        </span>
+        <span className="statline__sep" aria-hidden="true">·</span>
+        <span className="statline__item">
+          <strong>{m.total_produced ?? 0}</strong> gerados a partir deles
+        </span>
+        {m.produced_7d > 0 && (
+          <>
+            <span className="statline__sep" aria-hidden="true">·</span>
+            <span className="statline__item statline__item--soft">
+              {m.produced_7d} nos últimos 7 dias
+            </span>
+          </>
+        )}
       </div>
 
-      {m.tag_counts && Object.keys(m.tag_counts).length > 0 && (
-        <div className="card" style={{ marginBottom: 18 }}>
-          <h3 className="card__title">Tags em uso</h3>
-          <div className="chips">
+      {/* Barra de trabalho: buscar, filtrar e adicionar. Fica acima do acervo
+          porque e o que se opera; o upload virou um botao, e nao a maior peca
+          da tela -- arquivo entra de vez em quando, video se escolhe sempre. */}
+      <div className="toolbar">
+        <input
+          className="input toolbar__search"
+          type="search"
+          placeholder={`Buscar entre ${items.length} vídeos`}
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+
+        {m.tag_counts && Object.keys(m.tag_counts).length > 0 && (
+          <div className="chips toolbar__tags">
             {Object.entries(m.tag_counts)
               .sort((a, b) => b[1] - a[1])
               .map(([tag, count]) => (
-                <span className="chip" key={tag}>
+                <button
+                  key={tag}
+                  type="button"
+                  className={"chip chip--btn" + (tagFiltro === tag ? " chip--on" : "")}
+                  onClick={() => setTagFiltro(tagFiltro === tag ? "" : tag)}
+                  aria-pressed={tagFiltro === tag}
+                >
                   {tag} · {count}
-                </span>
+                </button>
               ))}
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="card">
-        <h3 className="card__title">
-          <span className="dot">
-            <IconUpload width={18} height={18} />
-          </span>
-          Adicionar à biblioteca
-        </h3>
-        <p className="card__hint">
-          Envie vídeos (MP4, MOV, MKV…). O app normaliza automaticamente — HDR,
-          rotação e .mov de iPhone ficam prontos para gerar sem espera.
-        </p>
+        <button
+          type="button"
+          className="btn btn--primary toolbar__add"
+          onClick={() => setUploadAberto((v) => !v)}
+          aria-expanded={uploadAberto || items.length === 0}
+        >
+          <IconPlus width={16} height={16} /> Adicionar vídeos
+        </button>
+      </div>
+
+      {(uploadAberto || items.length === 0) && (
         <label
           className={"drop" + (drag ? " drag" : "")}
           onDragOver={(e) => {
@@ -186,7 +217,10 @@ export default function LibraryView({ onUseForGeneration }) {
           <div className="drop__title">
             {busy ? "Enviando e pré-processando..." : "Solte vídeos aqui"}
           </div>
-          <div style={{ fontSize: "var(--text-xs)" }}>ou clique para escolher (vários de uma vez)</div>
+          <div style={{ fontSize: "var(--text-xs)" }}>
+            ou clique para escolher (vários de uma vez). MP4, MOV, MKV — o app
+            normaliza HDR, rotação e .mov de iPhone automaticamente.
+          </div>
           <input
             type="file"
             accept="video/*"
@@ -196,18 +230,29 @@ export default function LibraryView({ onUseForGeneration }) {
             onChange={(e) => uploadFiles(e.target.files)}
           />
         </label>
-      </div>
+      )}
 
       {items.length === 0 ? (
-        <div className="card" style={{ marginTop: 18 }}>
-          <div className="empty">
-            Nenhum vídeo na biblioteca. Adicione arquivos acima — é daqui que
-            toda produção começa.
-          </div>
+        <div className="empty">
+          Nenhum vídeo na biblioteca. Adicione arquivos acima — é daqui que toda
+          produção começa.
+        </div>
+      ) : visiveis.length === 0 ? (
+        <div className="empty">
+          Nenhum vídeo com esse nome ou tag.{" "}
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => {
+              setBusca("");
+              setTagFiltro("");
+            }}
+          >
+            Limpar filtros
+          </button>
         </div>
       ) : (
         <div className="lib-grid">
-          {items.map((item) => (
+          {visiveis.map((item) => (
             <LibraryCard
               key={item.id}
               item={item}

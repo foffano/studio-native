@@ -1041,11 +1041,16 @@ input[type="range"] {
   background: var(--surface);
   box-shadow: var(--shadow);
 }
-.rcard video {
-  width: 100%;
-  display: block;
+.rcard__media {
+  position: relative;
   background: #000;
   aspect-ratio: 9 / 16;
+}
+.rcard video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
   object-fit: contain;
 }
 .rcard__body {
@@ -1265,9 +1270,11 @@ input[type="range"] {
 
 .lib-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 18px;
-  margin-top: 18px;
+  /* 220px em vez de 300: com 37 fontes, o que importa e enxergar muitas de uma
+     vez para escolher, nao ver cada uma grande. */
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 .lib-card {
   background: var(--surface);
@@ -1284,7 +1291,11 @@ input[type="range"] {
 .lib-card__media {
   position: relative;
   background: #000;
-  aspect-ratio: 16 / 9;
+  /* Retrato, porque as fontes sao videos verticais de celular: em 16/9 o
+     recorte mostraria so uma faixa do meio. 3/4 reconhece o conteudo sem que
+     cada cartao ocupe meia tela -- 9/16 dava 423px de altura numa coluna de
+     238. */
+  aspect-ratio: 3 / 4;
 }
 .lib-card__media video {
   width: 100%;
@@ -1824,4 +1835,78 @@ input[type="range"] {
 .auth-box .input {
   font-size: var(--text-md);
   width: 100%;
+}
+
+/* ==========================================================================
+   Faixa de números e barra de trabalho
+   ==========================================================================
+   Métrica em cartão compete com o conteúdo pelo mesmo peso visual. Numa tela
+   cujo assunto é o acervo, o número é contexto — texto numa linha, não caixa.
+   ========================================================================== */
+.statline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+.statline strong {
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  margin-right: 2px;
+}
+.statline__item--soft {
+  opacity: 0.75;
+}
+.statline__sep {
+  opacity: 0.4;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.toolbar__search {
+  flex: 1;
+  min-width: 220px;
+}
+.toolbar__tags {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.toolbar__add {
+  white-space: nowrap;
+}
+
+/* Chip que filtra: precisa parecer clicável e mostrar quando está ativo —
+   sem isso o usuário não sabe por que a lista encolheu. */
+.chip--btn {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chip--btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.chip--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .toolbar__add {
+    /* Alvo de toque: 44px é o mínimo recomendado. */
+    min-height: 44px;
+    flex: 1;
+  }
 }

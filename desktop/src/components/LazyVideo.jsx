@@ -19,7 +19,10 @@ export default function LazyVideo({
   src,
   controls = false,
   className = "",
-  proporcao = "9 / 16",
+  // Sem valor por padrao: o contentor de cada tela ja define a sua proporcao
+  // (16/9 na Biblioteca, 9/16 em Produzidos). Impor uma aqui aninhava duas
+  // razoes de aspecto e esticava os cartoes.
+  proporcao = null,
   onError,
 }) {
   const ref = useRef(null);
@@ -57,7 +60,16 @@ export default function LazyVideo({
       className={className}
       // Espaço reservado desde o primeiro quadro: sem isto a grade pula quando
       // cada vídeo carrega, e o clique do usuário cai no item errado.
-      style={{ aspectRatio: proporcao, background: "var(--surface-2)" }}
+      // `position: absolute` preenchendo o pai, e nao `height: 100%`: o video
+      // tem dimensao intrinseca, e com altura percentual ele ESTICA o pai em vez
+      // de obedecer a proporcao dele. Medido na Biblioteca: o contentor
+      // declarava 16/9 no CSS e renderizava 9/16 (238x423). Absoluto, o video
+      // nao participa do calculo de altura do pai.
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "var(--surface-2)",
+      }}
     >
       {visivel && (
         <video

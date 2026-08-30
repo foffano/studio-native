@@ -164,7 +164,9 @@ function CartaoProduzido({ output }) {
           Arquivo removido do disco. O registro continua no catálogo.
         </div>
       ) : (
-        <LazyVideo src={url} controls onError={() => setQuebrado(true)} />
+        <div className="rcard__media">
+          <LazyVideo src={url} controls onError={() => setQuebrado(true)} />
+        </div>
       )}
       <div className="rcard__body">
         <p className="rcard__phrase">{output.phrase || "(sem frase)"}</p>
