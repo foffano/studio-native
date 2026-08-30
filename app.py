@@ -2351,4 +2351,32 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print(f"[StudioNative] backend em http://{host}:{port}", flush=True)
-    app.run(host=host, port=port, debug=False, threaded=True)
+
+    # Servidor de producao. O `app.run()` do Flask e o servidor de
+    # desenvolvimento do Werkzeug -- a propria documentacao dele diz para nao
+    # usar em producao, e este app passa a atender pela internet.
+    #
+    # `threads=8` porque o trabalho pesado (render, upload para o TikTok) roda
+    # em filas proprias, com worker unico; as requisicoes HTTP em si sao curtas.
+    # Fora isso, waitress nao entrega arquivo grande com a mesma folga: o
+    # `channel_timeout` alto existe para o upload de video da Biblioteca nao
+    # morrer no meio.
+    try:
+        from waitress import serve
+
+        serve(
+            app,
+            host=host,
+            port=port,
+            threads=8,
+            channel_timeout=900,
+            ident="StudioNative",
+        )
+    except ImportError:
+        print(
+            "[StudioNative] waitress ausente; caindo no servidor de "
+            "desenvolvimento. NAO exponha isto a internet. "
+            "Instale com: pip install waitress",
+            flush=True,
+        )
+        app.run(host=host, port=port, debug=False, threaded=True)

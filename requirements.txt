@@ -1,4 +1,8 @@
 flask>=3.0
+# Servidor WSGI de producao. O app.run() do Flask e servidor de desenvolvimento
+# -- a propria documentacao diz para nao expor. waitress e Python puro, roda no
+# Windows e empacota no PyInstaller sem depender de compilador.
+waitress>=3.0
 moviepy>=2.1
 requests>=2.32
 python-dotenv>=1.0
