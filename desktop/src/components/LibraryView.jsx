@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  alternarFavorito,
+  esvaziarLixeira,
+  restaurarVideo,
+  updateLibraryFolder,
   getLibrary,
   uploadToLibrary,
   updateLibraryTags,
@@ -7,7 +11,7 @@ import {
   libraryVideoUrl,
 } from "../api.js";
 import LazyVideo from "./LazyVideo.jsx";
-import { IconUpload, IconTrash, IconVideo, IconPlus } from "./Icons.jsx";
+import { IconUpload, IconTrash, IconVideo, IconPlus, IconStar, IconRefresh } from "./Icons.jsx";
 
 function fmtDur(sec) {
   if (!sec) return "—";
@@ -51,6 +55,7 @@ export default function LibraryView({
   // se abre sozinho: e a unica acao possivel, e a orientacao de estado vazio e
   // justamente mostrar a acao em vez de uma tela em branco.
   const [uploadAberto, setUploadAberto] = useState(false);
+  const [dias, setDias] = useState(30);
   const pollRef = useRef(null);
 
   const visiveis = items.filter((i) => {
@@ -60,6 +65,51 @@ export default function LibraryView({
     return [i.name, ...(i.tags || [])].join(" ").toLowerCase().includes(termo);
   });
 
+  const naLixeira = secao === "lixeira";
+
+  const favoritar = async (id) => {
+    try {
+      await alternarFavorito(id);
+      await refresh();
+      onMudou && onMudou();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const moverPara = async (id, folderId) => {
+    try {
+      await updateLibraryFolder(id, folderId);
+      await refresh();
+      onMudou && onMudou();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const restaurar = async (id) => {
+    try {
+      await restaurarVideo(id);
+      await refresh();
+      onMudou && onMudou();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const esvaziar = async () => {
+    if (!window.confirm(
+      "Apagar em definitivo tudo que está na lixeira? Os arquivos somem do disco."
+    )) return;
+    try {
+      await esvaziarLixeira();
+      await refresh();
+      onMudou && onMudou();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const refresh = useCallback(async () => {
     try {
       const data = await getLibrary(
@@ -67,6 +117,7 @@ export default function LibraryView({
       );
       setItems(data.items || []);
       setMetrics(data.metrics || null);
+      if (data.lixeira_dias) setDias(data.lixeira_dias);
       setError("");
     } catch (e) {
       setError(e.message);
@@ -134,10 +185,17 @@ export default function LibraryView({
   };
 
   const del = async (id) => {
-    if (!confirm("Remover este vídeo da biblioteca?")) return;
+    // O aviso muda com o contexto, porque a acao muda: fora da lixeira e
+    // reversivel, dentro dela e definitiva. Um texto so para os dois casos
+    // ou assusta a toa, ou nao assusta quando deveria.
+    const pergunta = naLixeira
+      ? "Apagar este vídeo em definitivo? O arquivo some do disco."
+      : `Mover para a lixeira? Fica lá por ${dias} dias antes de sumir de vez.`;
+    if (!confirm(pergunta)) return;
     try {
       await deleteLibraryItem(id);
       await refresh();
+      onMudou && onMudou();
     } catch (e) {
       setError(e.message);
     }
@@ -170,10 +228,24 @@ export default function LibraryView({
         )}
       </div>
 
+      {naLixeira && (
+        <div className="toolbar">
+          <p className="muted" style={{ flex: 1, margin: 0, maxWidth: "var(--measure)" }}>
+            Vídeos aqui somem do disco automaticamente depois de{" "}
+            {dias || 30} dias. Restaurar traz de volta para a Biblioteca.
+          </p>
+          {items.length > 0 && (
+            <button className="btn btn--ghost" onClick={esvaziar}>
+              <IconTrash width={16} height={16} /> Esvaziar lixeira
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Barra de trabalho: buscar, filtrar e adicionar. Fica acima do acervo
           porque e o que se opera; o upload virou um botao, e nao a maior peca
           da tela -- arquivo entra de vez em quando, video se escolhe sempre. */}
-      <div className="toolbar">
+      <div className="toolbar" hidden={naLixeira}>
         <input
           className="input toolbar__search"
           type="search"
@@ -275,6 +347,11 @@ export default function LibraryView({
               onRemoveTag={(tag) => removeTag(item.id, item.tags, tag)}
               onDelete={() => del(item.id)}
               onGenerate={() => onUseForGeneration && onUseForGeneration(item)}
+              onFavoritar={() => favoritar(item.id)}
+              onMoverPara={(fid) => moverPara(item.id, fid)}
+              onRestaurar={() => restaurar(item.id)}
+              pastas={pastas}
+              naLixeira={naLixeira}
             />
           ))}
         </div>
@@ -291,6 +368,11 @@ function LibraryCard({
   onRemoveTag,
   onDelete,
   onGenerate,
+  onFavoritar,
+  onMoverPara,
+  onRestaurar,
+  pastas = [],
+  naLixeira = false,
 }) {
   const ready = item.status === "ready";
   const pending = item.status === "processing" || item.status === "queued";
@@ -309,6 +391,19 @@ function LibraryCard({
         <span className={"lib-card__status lib-card__status--" + item.status}>
           {statusLabel(item.status)}
         </span>
+
+        {!naLixeira && (
+          <button
+            className={"lib-card__fav" + (item.favorito ? " is-on" : "")}
+            onClick={onFavoritar}
+            title={item.favorito ? "Remover dos favoritos" : "Marcar como favorito"}
+            aria-pressed={!!item.favorito}
+          >
+            {/* O preenchimento e o que distingue a distancia; cor sozinha nao
+                bastaria para quem nao a percebe. */}
+            <IconStar width={16} height={16} fill={item.favorito ? "currentColor" : "none"} />
+          </button>
+        )}
       </div>
 
       <div className="lib-card__body">
@@ -356,18 +451,50 @@ function LibraryCard({
           </span>
         </div>
 
-        <div className="lib-card__actions">
-          <button
-            className="btn btn--primary"
-            disabled={!ready}
-            onClick={onGenerate}
-          >
-            Produzir vídeo
-          </button>
-          <button className="icon-btn" onClick={onDelete} title="Remover">
-            <IconTrash width={15} height={15} />
-          </button>
-        </div>
+        {naLixeira ? (
+          <div className="lib-card__actions">
+            <button className="btn btn--ghost" onClick={onRestaurar}>
+              <IconRefresh width={15} height={15} /> Restaurar
+            </button>
+            <button
+              className="icon-btn icon-btn--perigo"
+              onClick={onDelete}
+              title="Apagar definitivamente"
+            >
+              <IconTrash width={15} height={15} />
+            </button>
+          </div>
+        ) : (
+          <>
+            {pastas.length > 0 && (
+              <select
+                className="input lib-card__pasta"
+                value={item.folder_id || ""}
+                onChange={(e) => onMoverPara(e.target.value)}
+                aria-label="Pasta"
+              >
+                <option value="">Sem pasta</option>
+                {pastas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <div className="lib-card__actions">
+              <button
+                className="btn btn--primary"
+                disabled={!ready}
+                onClick={onGenerate}
+              >
+                Produzir vídeo
+              </button>
+              <button className="icon-btn" onClick={onDelete} title="Mover para a lixeira">
+                <IconTrash width={15} height={15} />
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

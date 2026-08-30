@@ -2004,6 +2004,13 @@ def api_library_patch(item_id):
     data = request.get_json(silent=True) or {}
     if "tags" in data:
         set_library_item(item_id, tags=normalize_tags(data.get("tags")))
+    if "folder_id" in data:
+        fid = str(data.get("folder_id") or "")
+        # Pasta inexistente vira "sem pasta" em vez de erro: e o mesmo destino
+        # que sobra quando alguem apaga a pasta com o video dentro.
+        if fid and not store.get_folder(fid):
+            fid = ""
+        set_library_item(item_id, folder_id=fid)
     return jsonify(get_library_item(item_id))
 
 

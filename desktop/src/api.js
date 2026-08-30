@@ -339,3 +339,13 @@ export async function esvaziarLixeira() {
   const res = await req(apiUrl("/api/library/lixeira"), { method: "DELETE" });
   return jsonOrThrow(res);
 }
+
+/** Move um vídeo-fonte para uma pasta (string vazia = sem pasta). */
+export async function updateLibraryFolder(id, folderId) {
+  const res = await req(apiUrl(`/api/library/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder_id: folderId }),
+  });
+  return jsonOrThrow(res);
+}

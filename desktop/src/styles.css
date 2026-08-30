@@ -2046,3 +2046,41 @@ input[type="range"] {
     display: none;
   }
 }
+
+/* Estrela de favorito, sobreposta à miniatura. */
+.lib-card__fav {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  /* Fundo escuro próprio: a estrela fica sobre vídeo, e o quadro pode ser
+     claro ou escuro conforme o frame. */
+  background: rgba(2, 6, 23, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s, color 0.15s;
+}
+.lib-card__fav:hover {
+  opacity: 1;
+}
+.lib-card__fav.is-on {
+  opacity: 1;
+  color: #facc15;
+}
+
+.lib-card__pasta {
+  width: 100%;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+}
+
+.icon-btn--perigo:hover {
+  color: #f87171;
+  border-color: #f87171;
+}
