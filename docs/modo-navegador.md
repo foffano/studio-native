@@ -30,6 +30,58 @@ python app.py                   # sobe em http://127.0.0.1:5050
 
 A porta vem de `STUDIO_PORT` (ou `PORT`), e o host de `STUDIO_HOST`.
 
+## Rodar em segundo plano
+
+O backend fica de pe sozinho, sem janela nenhuma, como tarefa do Agendador do
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\instalar-servico.ps1
+```
+
+Isso cria a tarefa `StudioNative`, com gatilho **ao fazer logon** -- ela sobe
+quando voce entra no Windows e continua rodando com tudo fechado.
+
+Para subir junto com o Windows, **antes de voce desbloquear**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\instalar-servico.ps1 -Gatilho AoIniciar
+```
+
+O Windows exige guardar a senha da sua conta para isso, e vai pedir numa caixa
+propria. Precisa de PowerShell como Administrador.
+
+### Por que como usuario, e nao como SYSTEM
+
+Servico do Windows normalmente roda como SYSTEM. Aqui **nao pode**: os tokens do
+TikTok sao cifrados com DPAPI, amarrado a conta `marlo`. Rodando como SYSTEM, a
+decifragem falharia e o app pediria para reconectar a conta a cada renovacao de
+sessao -- sem dizer o motivo, porque do ponto de vista dele o token
+simplesmente nao existe.
+
+Por isso `pythonw.exe` (sem janela de console) rodando como o proprio usuario, e
+nao um servico de verdade.
+
+### Por que do repositorio, e nao do executavel empacotado
+
+O `dist/StudioNativeBackend/` e apagado a cada rebuild do PyInstaller. Uma
+tarefa apontando para la pararia de funcionar no meio de um build, e o sintoma
+seria o site fora do ar sem motivo aparente.
+
+### Comandos
+
+```powershell
+Start-ScheduledTask StudioNative
+Stop-ScheduledTask  StudioNative
+Get-ScheduledTask   StudioNative | Get-ScheduledTaskInfo
+Unregister-ScheduledTask StudioNative -Confirm:$false
+```
+
+A tarefa reinicia sozinha se o processo cair (ate 999 vezes, a cada minuto) e
+nao tem limite de execucao -- o padrao do Windows mata tarefas depois de 3 dias,
+e um servico que morre sozinho num sabado e pior que um que nunca subiu, porque
+ninguem percebe.
+
 ## Endereco publico: native.toffa.com.br
 
 Ja esta no ar. A rota vive no tunel `fazenda`, que roda como servico do Windows
