@@ -277,10 +277,30 @@ def _attach_publications(items):
     return items
 
 
-UPDATABLE_OUTPUT_FIELDS = {"caption", "hashtags", "phrase", "status", "theme", "folder_id"}
+# Campos que `update_output` aceita. A lista existe para uma rota HTTP nao poder
+# escrever em qualquer coluna a partir de um JSON do cliente.
+#
+# O preco dela e silencioso: um campo esquecido aqui e descartado sem erro, e
+# quem chamou acha que gravou. Ja aconteceu tres vezes neste projeto -- por isso
+# `update_output` agora recusa campo desconhecido em vez de ignora-lo.
+UPDATABLE_OUTPUT_FIELDS = {
+    "caption", "hashtags", "phrase", "status", "theme", "folder_id",
+    "library_id",
+}
 
 
 def update_output(output_id, **fields):
+    # Campo desconhecido levanta erro em vez de sumir. Filtrar em silencio
+    # transforma um erro de programacao numa gravacao que nao aconteceu, e o
+    # sintoma aparece longe da causa -- foi assim que 45 religacoes de
+    # `library_id` foram reportadas como feitas sem terem sido.
+    desconhecidos = set(fields) - UPDATABLE_OUTPUT_FIELDS
+    if desconhecidos:
+        raise ValueError(
+            f"update_output: campo(s) que nao podem ser gravados: "
+            f"{', '.join(sorted(desconhecidos))}"
+        )
+
     sets, params = [], []
     for key, value in fields.items():
         if key not in UPDATABLE_OUTPUT_FIELDS:
