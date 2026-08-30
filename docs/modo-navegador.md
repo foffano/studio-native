@@ -30,7 +30,39 @@ python app.py                   # sobe em http://127.0.0.1:5050
 
 A porta vem de `STUDIO_PORT` (ou `PORT`), e o host de `STUDIO_HOST`.
 
-## Expor pelo celular com Cloudflare Tunnel
+## Endereco publico: native.toffa.com.br
+
+Ja esta no ar. A rota vive no tunel `fazenda`, que roda como servico do Windows
+nesta maquina:
+
+- config: `C:\Users\marlo\.cloudflared\fazenda.yml`
+- regra: `native.toffa.com.br` -> `http://localhost:5050`
+- tunel: `5f458d5a-a65a-4c45-9576-292ec8f71032`
+
+O tunel so entrega enquanto o backend estiver de pe na 5050. Com ele parado, a
+Cloudflare devolve 502.
+
+**Reiniciar o servico exige PowerShell como Administrador:**
+
+```powershell
+Restart-Service Cloudflared -Force
+```
+
+Sem elevacao, o `Restart-Service` reporta "Running" sem ter reiniciado nada -- o
+processo antigo continua com a config velha em memoria, e a regra nova nao vale.
+O jeito de conferir se pegou e o `CREATED` do conector:
+
+```bash
+cloudflared tunnel info fazenda
+```
+
+**Uma armadilha na criacao do DNS:** `cloudflared tunnel route dns` cria o
+registro na zona do `cert.pem`, nao na zona do hostname que voce pediu. Com um
+certificado emitido para outra zona, ele cria algo como
+`native.toffa.com.br.outrazona.cfd` e nao avisa que fez besteira. Se acontecer,
+refaca o `cloudflared tunnel login` escolhendo a zona certa.
+
+## Expor uma URL temporaria com Cloudflare Tunnel
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:5050
