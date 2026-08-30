@@ -11,7 +11,6 @@ import {
   IconStar,
   IconClock,
   IconTrash,
-  IconLayers,
   IconVideo,
 } from "./Icons.jsx";
 
@@ -139,30 +138,31 @@ export default function Sidebar({
           onClick={() => onNavegar({ area: "biblioteca", secao: "lixeira" })}
         />
 
-        <div className="nav__label">Produzidos</div>
-        <Item
-          icone={<IconLayers />}
-          rotulo="Todos"
-          rotuloCurto="Produzidos"
-          principal
-          contagem={cp.total_produced}
-          ativo={em("produzidos", "todos")}
-          onClick={() => onNavegar({ area: "produzidos", secao: "todos" })}
-        />
-        <Item
-          icone={<IconHistory />}
-          rotulo="Esperando no TikTok"
-          contagem={cp.awaiting}
-          ativo={em("produzidos", "aguardando")}
-          onClick={() => onNavegar({ area: "produzidos", secao: "aguardando" })}
-        />
-        <Item
-          icone={<IconVideo />}
-          rotulo="Publicados"
-          contagem={cp.total_published}
-          ativo={em("produzidos", "publicados")}
-          onClick={() => onNavegar({ area: "produzidos", secao: "publicados" })}
-        />
+        {/* Uma entrada so, e nao tres.
+            "Todos os produzidos" e "Publicados" repetiam o que agora esta no
+            painel de cada video-fonte: para ver o que saiu de um video,
+            clica-se nele. Uma lista global das saidas nao responde a nenhuma
+            pergunta que a Biblioteca ja nao responda melhor.
+
+            "Esperando no TikTok" fica porque e a excecao: e a unica lista cuja
+            pergunta atravessa as fontes -- "o que eu preciso terminar de
+            postar?" -- e quem a faz nao sabe de qual video veio cada uma.
+            Aparece so quando ha algo esperando; uma linha marcando zero seria
+            uma tarefa que nao existe. */}
+        {cp.awaiting > 0 && (
+          <>
+            <div className="nav__label">Pendências</div>
+            <Item
+              icone={<IconHistory />}
+              rotulo="Esperando no TikTok"
+              rotuloCurto="TikTok"
+              principal
+              contagem={cp.awaiting}
+              ativo={em("produzidos", "aguardando")}
+              onClick={() => onNavegar({ area: "produzidos", secao: "aguardando" })}
+            />
+          </>
+        )}
 
         <button
           className="nav__label nav__label--btn"
