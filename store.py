@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS publications (
 CREATE INDEX IF NOT EXISTS idx_pub_output ON publications(output_id);
 CREATE INDEX IF NOT EXISTS idx_pub_state ON publications(state);
 
+-- Pastas. Moram aqui, e nao no library.json, porque valem para os dois lados:
+-- os videos-fonte da Biblioteca e os videos produzidos. Duas listas de pastas
+-- divergiriam na primeira renomeacao.
+CREATE TABLE IF NOT EXISTS folders (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     id                TEXT PRIMARY KEY,
     platform          TEXT DEFAULT 'tiktok',
@@ -108,8 +117,23 @@ def init_store(db_path):
         _CONN.execute("PRAGMA journal_mode=WAL")
         _CONN.execute("PRAGMA synchronous=NORMAL")
         _CONN.executescript(SCHEMA)
+        _migrar(_CONN)
         _CONN.commit()
     return _CONN
+
+
+def _migrar(con):
+    """Ajustes de esquema em bancos que ja existem.
+
+    `CREATE TABLE IF NOT EXISTS` cuida das tabelas novas, mas nao acrescenta
+    coluna a uma tabela que ja existe -- e este banco esta em uso, com videos
+    dentro. Cada passo confere antes de agir, para a funcao poder rodar em todo
+    boot sem efeito.
+    """
+    colunas = {r["name"] for r in con.execute("PRAGMA table_info(outputs)")}
+    if "folder_id" not in colunas:
+        con.execute("ALTER TABLE outputs ADD COLUMN folder_id TEXT DEFAULT ''")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_outputs_folder ON outputs(folder_id)")
 
 
 def _rows(sql, params=()):
@@ -246,7 +270,7 @@ def _attach_publications(items):
     return items
 
 
-UPDATABLE_OUTPUT_FIELDS = {"caption", "hashtags", "phrase", "status", "theme"}
+UPDATABLE_OUTPUT_FIELDS = {"caption", "hashtags", "phrase", "status", "theme", "folder_id"}
 
 
 def update_output(output_id, **fields):
@@ -608,3 +632,61 @@ def delete_account(account_id):
     item = get_account(account_id)
     _exec("DELETE FROM accounts WHERE id = ?", (account_id,))
     return item
+
+
+# ---------------------------------------------------------------------------
+# pastas
+# ---------------------------------------------------------------------------
+# Planas, sem aninhamento. Pasta dentro de pasta exige arvore na interface,
+# mover em cascata e decidir o que acontece com o conteudo ao apagar a mae --
+# complexidade que so se paga com muitos itens. Com dezenas, uma lista basta.
+
+def add_folder(name):
+    nome = (name or "").strip()
+    if not nome:
+        raise ValueError("nome vazio")
+    fid = uuid.uuid4().hex[:12]
+    _exec(
+        "INSERT INTO folders (id, name, created_at) VALUES (?, ?, ?)",
+        (fid, nome[:60], _now()),
+    )
+    return get_folder(fid)
+
+
+def get_folder(folder_id):
+    return _one("SELECT * FROM folders WHERE id = ?", (folder_id,))
+
+
+def list_folders():
+    return _rows("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC")
+
+
+def rename_folder(folder_id, name):
+    nome = (name or "").strip()
+    if not nome:
+        raise ValueError("nome vazio")
+    _exec("UPDATE folders SET name = ? WHERE id = ?", (nome[:60], folder_id))
+    return get_folder(folder_id)
+
+
+def delete_folder(folder_id):
+    """Apaga a pasta, nao o conteudo.
+
+    Os itens voltam para "sem pasta". Apagar videos junto seria uma perda
+    irreversivel disparada por uma acao que parece organizacional.
+    """
+    item = get_folder(folder_id)
+    _exec("UPDATE outputs SET folder_id = '' WHERE folder_id = ?", (folder_id,))
+    _exec("DELETE FROM folders WHERE id = ?", (folder_id,))
+    return item
+
+
+def count_outputs_by_folder():
+    """{folder_id: quantidade} para a contagem na barra lateral."""
+    return {
+        r["folder_id"]: int(r["n"])
+        for r in _rows(
+            "SELECT folder_id, COUNT(*) AS n FROM outputs "
+            "WHERE folder_id != '' GROUP BY folder_id"
+        )
+    }

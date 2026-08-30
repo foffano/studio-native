@@ -429,6 +429,11 @@ JOBS_LOCK = threading.Lock()
 # Biblioteca de videos pre-processados (normalizados e prontos para geracao).
 LIBRARY = {}
 LIBRARY_LOCK = threading.Lock()
+# Quanto tempo um video fica na lixeira antes de sumir do disco. Video ocupa
+# espaco de verdade (~3 MB cada), e lixeira sem prazo vira deposito que enche o
+# disco em silencio. A contagem fica visivel na barra lateral o tempo todo.
+LIXEIRA_DIAS = 30
+
 LIBRARY_QUEUE = queue.Queue()
 LIBRARY_WORKER_LOCK = threading.Lock()
 LIBRARY_WORKER_STARTED = False
@@ -482,6 +487,53 @@ def normalize_tags(tags):
         if s not in out:
             out.append(s)
     return out
+
+
+def item_na_lixeira(item):
+    return bool(item.get("excluido_em"))
+
+
+def itens_da_biblioteca(incluir_lixeira=False):
+    """Itens da biblioteca, por padrao sem os que estao na lixeira.
+
+    Todo caminho de leitura passa por aqui. Filtrar caso a caso deixaria um
+    video excluido reaparecer em algum canto -- provavelmente no seletor de
+    origem, que e o pior lugar para isso acontecer.
+    """
+    itens = list(LIBRARY.values())
+    if incluir_lixeira:
+        return itens
+    return [i for i in itens if not item_na_lixeira(i)]
+
+
+def purgar_lixeira():
+    """Apaga de vez o que passou do prazo. Roda no boot e a cada varredura."""
+    limite = datetime.now(timezone.utc) - timedelta(days=LIXEIRA_DIAS)
+    apagados = 0
+    for item in list(LIBRARY.values()):
+        quando = item.get("excluido_em")
+        if not quando:
+            continue
+        try:
+            if datetime.fromisoformat(quando) > limite:
+                continue
+        except (TypeError, ValueError):
+            # Data ilegivel: nao apagamos por duvida. O item fica na lixeira e
+            # o usuario decide.
+            continue
+        fname = item.get("file")
+        with LIBRARY_LOCK:
+            LIBRARY.pop(item["id"], None)
+        if fname:
+            try:
+                (LIBRARY_DIR / fname).unlink(missing_ok=True)
+            except OSError:
+                pass
+        apagados += 1
+    if apagados:
+        _save_library_file()
+        print(f"[StudioNative] lixeira: {apagados} video(s) apagados apos {LIXEIRA_DIAS} dias", flush=True)
+    return apagados
 
 
 def library_metrics():
@@ -635,6 +687,7 @@ def recover_library_on_startup():
 init_library()
 store.init_store(STUDIO_DB_PATH)
 secretbox.init_secretbox(USER_DATA_DIR)
+purgar_lixeira()
 recover_library_on_startup()
 
 
@@ -1836,12 +1889,39 @@ def api_metrics():
 
 @app.route("/api/library", methods=["GET"])
 def api_library_list():
+    """Itens da biblioteca, filtrados pela secao pedida.
+
+    `secao` = todos | favoritos | recentes | lixeira, ou `pasta=<id>`. A secao
+    e resolvida no backend, e nao no cliente, porque a lixeira precisa ser
+    excluida de todas as outras -- filtrar no React deixaria um video excluido
+    reaparecer em algum canto.
+    """
+    secao = (request.args.get("secao") or "todos").lower()
+    pasta = request.args.get("pasta")
+
     with LIBRARY_LOCK:
-        items = sorted(
-            (dict(v) for v in LIBRARY.values()),
-            key=lambda x: x.get("created_at") or "",
-            reverse=True,
-        )
+        crus = [dict(v) for v in LIBRARY.values()]
+
+    na_lixeira = [i for i in crus if item_na_lixeira(i)]
+    vivos = [i for i in crus if not item_na_lixeira(i)]
+
+    if secao == "lixeira":
+        items = sorted(na_lixeira, key=lambda x: x.get("excluido_em") or "", reverse=True)
+    elif secao == "favoritos":
+        items = [i for i in vivos if i.get("favorito")]
+    elif secao == "recentes":
+        # Os 12 mais novos. Numero pequeno de proposito: "recentes" so tem
+        # utilidade enquanto for uma lista curta -- 30 itens ja e um acervo.
+        items = sorted(vivos, key=lambda x: x.get("created_at") or "", reverse=True)[:12]
+    elif pasta is not None:
+        # `pasta=` vazio significa "sem pasta", que e uma seccao legitima.
+        items = [i for i in vivos if (i.get("folder_id") or "") == pasta]
+    else:
+        items = vivos
+
+    if secao != "recentes":
+        items = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)
+
     counts = store.counts_by_library()
     for item in items:
         c = counts.get(item.get("id")) or {}
@@ -1849,7 +1929,26 @@ def api_library_list():
         item["published_count"] = c.get("published", 0)
     metrics = library_metrics()
     metrics.update(store.metrics())
-    return jsonify({"items": items, "metrics": metrics})
+
+    # Contagens da barra lateral. Vao junto na mesma resposta para a navegacao
+    # nao precisar de uma segunda viagem so para saber os numeros.
+    por_pasta = {}
+    for i in vivos:
+        por_pasta[i.get("folder_id") or ""] = por_pasta.get(i.get("folder_id") or "", 0) + 1
+
+    return jsonify({
+        "items": items,
+        "metrics": metrics,
+        "secao": secao,
+        "contagens": {
+            "todos": len(vivos),
+            "favoritos": sum(1 for i in vivos if i.get("favorito")),
+            "lixeira": len(na_lixeira),
+            "por_pasta": por_pasta,
+        },
+        "pastas": store.list_folders(),
+        "lixeira_dias": LIXEIRA_DIAS,
+    })
 
 
 @app.route("/api/library/upload", methods=["POST"])
@@ -1910,19 +2009,112 @@ def api_library_patch(item_id):
 
 @app.route("/api/library/<item_id>", methods=["DELETE"])
 def api_library_delete(item_id):
+    """Move para a lixeira -- ou apaga de vez, com ?definitivo=1.
+
+    O comportamento antigo apagava o arquivo do disco na hora. Um clique errado
+    era irreversivel, e nada avisava disso.
+    """
     item = get_library_item(item_id)
     if not item:
         return jsonify({"error": "Video nao encontrado."}), 404
-    fname = item.get("file")
-    with LIBRARY_LOCK:
-        LIBRARY.pop(item_id, None)
-    _save_library_file()
-    if fname:
-        try:
-            (LIBRARY_DIR / fname).unlink(missing_ok=True)
-        except OSError:
-            pass
-    return jsonify({"ok": True})
+
+    definitivo = request.args.get("definitivo") == "1"
+    if definitivo or item_na_lixeira(item):
+        fname = item.get("file")
+        with LIBRARY_LOCK:
+            LIBRARY.pop(item_id, None)
+        _save_library_file()
+        if fname:
+            try:
+                (LIBRARY_DIR / fname).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return jsonify({"ok": True, "apagado": True})
+
+    set_library_item(item_id, excluido_em=datetime.now(timezone.utc).isoformat())
+    return jsonify({"ok": True, "apagado": False, "item": get_library_item(item_id)})
+
+
+@app.route("/api/library/<item_id>/restaurar", methods=["POST"])
+def api_library_restore(item_id):
+    if not get_library_item(item_id):
+        return jsonify({"error": "Video nao encontrado."}), 404
+    set_library_item(item_id, excluido_em="")
+    return jsonify({"ok": True, "item": get_library_item(item_id)})
+
+
+@app.route("/api/library/<item_id>/favorito", methods=["POST"])
+def api_library_favorite(item_id):
+    item = get_library_item(item_id)
+    if not item:
+        return jsonify({"error": "Video nao encontrado."}), 404
+    dados = request.get_json(silent=True) or {}
+    valor = bool(dados.get("favorito", not item.get("favorito")))
+    set_library_item(item_id, favorito=valor)
+    return jsonify({"ok": True, "item": get_library_item(item_id)})
+
+
+@app.route("/api/library/lixeira", methods=["DELETE"])
+def api_library_empty_trash():
+    """Esvazia a lixeira agora, sem esperar os 30 dias."""
+    apagados = 0
+    for item in [i for i in LIBRARY.values() if item_na_lixeira(i)]:
+        fname = item.get("file")
+        with LIBRARY_LOCK:
+            LIBRARY.pop(item["id"], None)
+        if fname:
+            try:
+                (LIBRARY_DIR / fname).unlink(missing_ok=True)
+            except OSError:
+                pass
+        apagados += 1
+    if apagados:
+        _save_library_file()
+    return jsonify({"ok": True, "apagados": apagados})
+
+
+# ---------------------------------------------------------------------------
+# Pastas
+# ---------------------------------------------------------------------------
+
+@app.route("/api/folders", methods=["GET"])
+def api_folders_list():
+    return jsonify({
+        "items": store.list_folders(),
+        "outputs_por_pasta": store.count_outputs_by_folder(),
+    })
+
+
+@app.route("/api/folders", methods=["POST"])
+def api_folders_create():
+    nome = str((request.get_json(silent=True) or {}).get("nome") or "").strip()
+    if not nome:
+        return jsonify({"error": "Dê um nome à pasta."}), 400
+    return jsonify(store.add_folder(nome))
+
+
+@app.route("/api/folders/<folder_id>", methods=["PATCH"])
+def api_folders_rename(folder_id):
+    if not store.get_folder(folder_id):
+        return jsonify({"error": "Pasta nao encontrada."}), 404
+    nome = str((request.get_json(silent=True) or {}).get("nome") or "").strip()
+    if not nome:
+        return jsonify({"error": "Dê um nome à pasta."}), 400
+    return jsonify(store.rename_folder(folder_id, nome))
+
+
+@app.route("/api/folders/<folder_id>", methods=["DELETE"])
+def api_folders_delete(folder_id):
+    """Apaga a pasta. O conteudo volta para "sem pasta", nao some."""
+    if not store.get_folder(folder_id):
+        return jsonify({"error": "Pasta nao encontrada."}), 404
+    store.delete_folder(folder_id)
+    soltos = 0
+    for item in list(LIBRARY.values()):
+        if (item.get("folder_id") or "") == folder_id:
+            set_library_item(item["id"], folder_id="")
+            soltos += 1
+    return jsonify({"ok": True, "itens_soltos": soltos})
 
 
 @app.route("/api/config")
