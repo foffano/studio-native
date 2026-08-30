@@ -1031,8 +1031,10 @@ input[type="range"] {
 }
 .results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 18px;
+  /* 220px, como na Biblioteca: com dezenas de saidas, o que importa e enxergar
+     muitas de uma vez. */
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
 }
 .rcard {
   border: 1px solid var(--border);
@@ -1044,7 +1046,10 @@ input[type="range"] {
 .rcard__media {
   position: relative;
   background: #000;
-  aspect-ratio: 9 / 16;
+  /* 3/4 em vez de 9/16. O video e vertical, mas a miniatura nao precisa ter a
+     proporcao dele: em 9/16 um card sozinho passava de 700px de altura, e o
+     acervo virava rolagem infinita. */
+  aspect-ratio: 3 / 4;
 }
 .rcard video {
   width: 100%;
@@ -1055,6 +1060,17 @@ input[type="range"] {
 }
 .rcard__body {
   padding: 13px 14px;
+}
+/* Legenda em duas linhas, com reticencias. Texto longo em card de grade
+   empurra o proximo item para baixo e desalinha a grade inteira. */
+.rcard__legenda {
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .rcard__phrase {
   font-size: 13.5px;

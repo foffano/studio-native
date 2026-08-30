@@ -115,14 +115,18 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
   const andamento = pub?.progresso;
 
   // A legenda é a mesma nos dois estados finais, então mora numa função só.
+  // Numa grade de dezenas de cards, a legenda inteira mais o QR faziam cada
+  // item passar de mil pixels. O conteudo continua aqui -- so nao aberto por
+  // padrao, porque ele so importa no momento de terminar o post no celular.
   const blocoLegenda = legenda && (
-    <div style={{ marginTop: 10 }}>
+    <details className="revelar" style={{ marginTop: "var(--space-2)" }}>
+      <summary className="revelar__titulo">Legenda para colar</summary>
+      <div className="revelar__corpo">
       {/* A legenda não vai junto, e não é limitação nossa: o endpoint de caixa
           de entrada aceita só `source_info`. Campo de título existe apenas no
           Direct Post, que publica direto no feed. */}
       <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "0 0 6px" }}>
-        A legenda não pode ser enviada junto — o TikTok não aceita texto neste
-        caminho. Cole ao terminar o post:
+        O TikTok não aceita texto neste caminho. Cole ao terminar o post:
       </p>
       <pre
         style={{
@@ -144,7 +148,8 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
         </button>
         <CaptionQR texto={legenda} outputId={outputId} />
       </div>
-    </div>
+      </div>
+    </details>
   );
 
   // Entregue na caixa de entrada, esperando você terminar dentro do TikTok.
@@ -155,9 +160,8 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
           Esperando você no TikTok de @{conta.nickname}
         </p>
         <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "0 0 8px" }}>
-          Abra o TikTok no celular, vá na aba <strong>Caixa de entrada</strong> e
-          toque na notificação do vídeo para revisar, adicionar o produto e
-          publicar. Ele não aparece em Rascunhos — esses são só do aparelho.
+          Toque na notificação na <strong>Caixa de entrada</strong> do TikTok
+          para publicar. Não aparece em Rascunhos.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button

@@ -193,16 +193,23 @@ function CartaoProduzido({ output }) {
         <p className="rcard__phrase">{output.phrase || "(sem frase)"}</p>
 
         {output.caption && (
-          <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "0 0 6px" }}>
+          <p className="rcard__legenda" title={output.caption}>
             {output.caption}
           </p>
         )}
 
         {(output.hashtags || []).length > 0 && (
-          <div className="chips" style={{ marginBottom: 8 }}>
-            {output.hashtags.map((t) => (
+          /* Tres hashtags e o resto como contagem: cinco chips quebravam em
+             duas linhas e cada card ficava de uma altura diferente. */
+          <div className="chips" style={{ marginBottom: "var(--space-2)" }}>
+            {output.hashtags.slice(0, 3).map((t) => (
               <span className="chip" key={t}>#{t}</span>
             ))}
+            {output.hashtags.length > 3 && (
+              <span className="chip" title={output.hashtags.map((t) => "#" + t).join(" ")}>
+                +{output.hashtags.length - 3}
+              </span>
+            )}
           </div>
         )}
 
