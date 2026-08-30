@@ -9,7 +9,7 @@ import threading
 import time
 import queue
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +20,7 @@ from flask import (
     jsonify,
     request,
     send_from_directory,
+    session,
 )
 from PIL import Image, ImageDraw, ImageFont
 
@@ -31,6 +32,7 @@ from moviepy import (
     concatenate_videoclips,
 )
 
+import auth
 import captions as cap
 import secretbox
 import store
@@ -117,6 +119,12 @@ SETTINGS_DEFAULTS = {
     "ELEVENLABS_MODEL": "eleven_multilingual_v2",
     "MAX_HEIGHT": 1080,
     "voices": [],
+    # Hash scrypt da senha do admin. Vazio = app ainda nao configurado, e a
+    # primeira coisa que a interface pede e criar uma senha.
+    "ADMIN_PASSWORD_HASH": "",
+    # Chave que assina o cookie de sessao. Persistida para os logins
+    # sobreviverem a um reinicio do servico.
+    "SESSION_SECRET": "",
 }
 SECRET_KEYS = {"OPENROUTER_API_KEY", "ELEVENLABS_API_KEY"}
 
@@ -218,16 +226,168 @@ init_settings()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB
 
+app.secret_key = auth.obter_secret_key(SETTINGS, _save_config_file)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    # Secure fica desligado por padrao porque o app tambem e servido em
+    # http://127.0.0.1 -- com a flag ligada, o navegador nao guardaria o cookie
+    # ali e o login local nunca funcionaria. O trafego pelo tunel e HTTPS de
+    # ponta a ponta de qualquer forma; a flag so impediria o navegador de mandar
+    # o cookie por http, e o unico http em jogo e o loopback. Ligue
+    # STUDIO_COOKIE_SECURE=1 se um dia servir por http em IP de rede.
+    SESSION_COOKIE_SECURE=os.getenv("STUDIO_COOKIE_SECURE") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+
+# Origens que podem falar com a API de outro endereco. O `*` que existia aqui
+# era justificado por "o servidor so escuta em 127.0.0.1" -- premissa que morre
+# no instante em que o tunel sobe. Servido pelo proprio Flask, o front usa a
+# mesma origem e nao precisa de CORS nenhum; a lista existe so para o Electron e
+# o Vite em desenvolvimento.
+ORIGENS_PERMITIDAS = {
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+}
+
 
 @app.after_request
 def _add_cors_headers(resp):
-    # O Electron carrega o React de outra origem (vite dev / file://) e fala
-    # com o backend local via HTTP, entao habilitamos CORS de forma ampla
-    # (o servidor so escuta em 127.0.0.1).
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+    origem = request.headers.get("Origin")
+    if origem in ORIGENS_PERMITIDAS:
+        resp.headers["Access-Control-Allow-Origin"] = origem
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        resp.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PATCH, DELETE, OPTIONS"
+        )
+        resp.headers["Vary"] = "Origin"
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Guarda de autenticacao
+# ---------------------------------------------------------------------------
+# Uma lista de excecoes, e nao um decorador por rota. Sao 34 rotas: esquecer o
+# decorador numa delas seria facil, silencioso, e a rota esquecida provavelmente
+# seria uma das que servem arquivos de video -- que nao parecem sensiveis e sao.
+
+PUBLICAS = {
+    "/api/health",          # o tunel e o Electron checam antes do login
+    "/api/auth/status",
+    "/api/auth/login",
+    "/api/auth/setup",
+    "/favicon.ico",
+    "/",                    # a casca do front, para a tela de login existir
+}
+
+
+def _rota_publica(caminho):
+    if caminho in PUBLICAS:
+        return True
+    # Os assets do front nao carregam segredo: sao o JS e o CSS que desenham a
+    # propria tela de login.
+    return caminho.startswith("/assets/")
+
+
+def senha_configurada():
+    return bool(SETTINGS.get("ADMIN_PASSWORD_HASH"))
+
+
+def _logado():
+    return bool(session.get("admin"))
+
+
+@app.before_request
+def _exigir_login():
+    if request.method == "OPTIONS" or _rota_publica(request.path):
+        return None
+    if not senha_configurada():
+        return jsonify({"error": "sem_senha", "message": "Defina uma senha de acesso."}), 401
+    if not _logado():
+        return jsonify({"error": "nao_autenticado"}), 401
+    return None
+
+
+@app.route("/api/auth/status", methods=["GET"])
+def api_auth_status():
+    return jsonify(
+        {
+            "senha_configurada": senha_configurada(),
+            "autenticado": _logado(),
+        }
+    )
+
+
+@app.route("/api/auth/setup", methods=["POST"])
+def api_auth_setup():
+    """Cria a senha na primeira execucao.
+
+    So funciona enquanto nao existe senha -- depois disso a rota se fecha
+    sozinha, senao seria uma porta para trocar a senha sem saber a atual.
+    """
+    if senha_configurada():
+        return jsonify({"error": "Ja existe uma senha definida."}), 409
+
+    senha = str((request.get_json(silent=True) or {}).get("senha") or "")
+    problema = auth.forca_da_senha(senha)
+    if problema:
+        return jsonify({"error": problema}), 400
+
+    SETTINGS["ADMIN_PASSWORD_HASH"] = auth.gerar_hash(senha)
+    _save_config_file(SETTINGS)
+    session.permanent = True
+    session["admin"] = True
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    ip = auth.ip_do_pedido(request)
+    espera = auth.bloqueado_ate(ip)
+    if espera:
+        return jsonify({
+            "error": f"Tentativas demais. Tente de novo em {espera}s.",
+            "espera": espera,
+        }), 429
+
+    senha = str((request.get_json(silent=True) or {}).get("senha") or "")
+    if not auth.conferir_senha(senha, SETTINGS.get("ADMIN_PASSWORD_HASH")):
+        auth.registrar_falha(ip)
+        # Mensagem unica para senha errada: dizer "usuario nao existe" ou
+        # "senha incorreta" entrega informacao de graca.
+        return jsonify({"error": "Senha incorreta."}), 401
+
+    auth.limpar_falhas(ip)
+    session.permanent = True
+    session["admin"] = True
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/senha", methods=["POST"])
+def api_auth_trocar_senha():
+    """Troca a senha, exigindo a atual."""
+    dados = request.get_json(silent=True) or {}
+    atual = str(dados.get("atual") or "")
+    nova = str(dados.get("nova") or "")
+
+    if not auth.conferir_senha(atual, SETTINGS.get("ADMIN_PASSWORD_HASH")):
+        return jsonify({"error": "A senha atual esta incorreta."}), 401
+
+    problema = auth.forca_da_senha(nova)
+    if problema:
+        return jsonify({"error": problema}), 400
+
+    SETTINGS["ADMIN_PASSWORD_HASH"] = auth.gerar_hash(nova)
+    _save_config_file(SETTINGS)
+    return jsonify({"ok": True})
 
 # Armazenamento simples de jobs em memoria
 JOBS = {}
@@ -2157,9 +2317,38 @@ def api_tiktok_connect_status():
     return jsonify(estado)
 
 
+def _porta_ja_ocupada(host, port):
+    """Ha outra instancia servindo nesta porta?
+
+    Existe porque o Windows deixa dois processos ligarem no mesmo endereco
+    quando o socket usa SO_REUSEADDR -- que e o que o Werkzeug faz. O segundo
+    sobe sem erro, as requisicoes vao para um ou para outro sem criterio, e o
+    sintoma e absurdo: a interface nova conversando com o backend velho. Melhor
+    recusar a subir e dizer o motivo.
+    """
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.7)
+        try:
+            s.connect((host if host != "0.0.0.0" else "127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
 if __name__ == "__main__":
     # A porta pode vir do Electron (STUDIO_PORT) ou de PORT; default 5050 em dev.
     port = int(os.getenv("STUDIO_PORT") or os.getenv("PORT") or "5050")
     host = os.getenv("STUDIO_HOST", "127.0.0.1")
+
+    if _porta_ja_ocupada(host, port):
+        print(
+            f"[StudioNative] ja existe algo servindo em {host}:{port}. "
+            f"Feche a outra instancia ou use STUDIO_PORT para escolher outra "
+            f"porta.",
+            flush=True,
+        )
+        sys.exit(1)
+
     print(f"[StudioNative] backend em http://{host}:{port}", flush=True)
     app.run(host=host, port=port, debug=False, threaded=True)

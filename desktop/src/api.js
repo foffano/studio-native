@@ -23,6 +23,14 @@ export const isElectron =
   !!(window.studioNative && window.studioNative.isElectron);
 
 export const apiUrl = (p) => `${BACKEND}${p}`;
+
+/** `fetch` com cookie de sessao.
+ *
+ * `credentials` só vale "same-origin" por padrão. Servido pelo Flask isso
+ * bastaria, mas no Electron o front fala com `http://127.0.0.1:<porta>` — outra
+ * origem — e o cookie de sessão simplesmente não seria enviado: todo pedido
+ * voltaria 401 sem explicação. */
+const req = (url, opts = {}) => fetch(url, { credentials: "include", ...opts });
 export const outputUrl = (file) => `${BACKEND}/outputs/${file}`;
 
 async function jsonOrThrow(res) {
@@ -33,6 +41,12 @@ async function jsonOrThrow(res) {
     /* sem corpo JSON */
   }
   if (!res.ok) {
+    // Sessão caiu (expirou, serviço reiniciado, logout em outra aba). Avisamos
+    // o app inteiro de uma vez: sem isto, cada tela mostraria seu próprio erro
+    // críptico e nenhuma levaria de volta ao login.
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("studio:sem-sessao"));
+    }
     const msg = (data && data.error) || `Erro ${res.status}`;
     throw new Error(msg);
   }
@@ -40,17 +54,17 @@ async function jsonOrThrow(res) {
 }
 
 export async function getConfig() {
-  const res = await fetch(apiUrl("/api/config"));
+  const res = await req(apiUrl("/api/config"));
   return jsonOrThrow(res);
 }
 
 export async function getSettings() {
-  const res = await fetch(apiUrl("/api/settings"));
+  const res = await req(apiUrl("/api/settings"));
   return jsonOrThrow(res);
 }
 
 export async function saveSettings(payload) {
-  const res = await fetch(apiUrl("/api/settings"), {
+  const res = await req(apiUrl("/api/settings"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -59,7 +73,7 @@ export async function saveSettings(payload) {
 }
 
 export async function startGeneration(formData) {
-  const res = await fetch(apiUrl("/api/generate"), {
+  const res = await req(apiUrl("/api/generate"), {
     method: "POST",
     body: formData,
   });
@@ -67,21 +81,21 @@ export async function startGeneration(formData) {
 }
 
 export async function getStatus(jobId) {
-  const res = await fetch(apiUrl(`/api/status/${jobId}`));
+  const res = await req(apiUrl(`/api/status/${jobId}`));
   return jsonOrThrow(res);
 }
 
 export const libraryVideoUrl = (file) => `${BACKEND}/library/${file}`;
 
 export async function getLibrary() {
-  const res = await fetch(apiUrl("/api/library"));
+  const res = await req(apiUrl("/api/library"));
   return jsonOrThrow(res);
 }
 
 export async function uploadToLibrary(file) {
   const fd = new FormData();
   fd.append("video", file);
-  const res = await fetch(apiUrl("/api/library/upload"), {
+  const res = await req(apiUrl("/api/library/upload"), {
     method: "POST",
     body: fd,
   });
@@ -89,7 +103,7 @@ export async function uploadToLibrary(file) {
 }
 
 export async function updateLibraryTags(id, tags) {
-  const res = await fetch(apiUrl(`/api/library/${id}`), {
+  const res = await req(apiUrl(`/api/library/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tags }),
@@ -98,14 +112,14 @@ export async function updateLibraryTags(id, tags) {
 }
 
 export async function deleteLibraryItem(id) {
-  const res = await fetch(apiUrl(`/api/library/${id}`), { method: "DELETE" });
+  const res = await req(apiUrl(`/api/library/${id}`), { method: "DELETE" });
   return jsonOrThrow(res);
 }
 
 // --- Catalogo de producao: os videos que o app gerou -----------------------
 
 export async function getOutput(id) {
-  const res = await fetch(apiUrl(`/api/outputs/${id}`));
+  const res = await req(apiUrl(`/api/outputs/${id}`));
   return jsonOrThrow(res);
 }
 
@@ -113,12 +127,12 @@ export async function getOutputs(params = {}) {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== "" && v != null)
   ).toString();
-  const res = await fetch(apiUrl(`/api/outputs${qs ? `?${qs}` : ""}`));
+  const res = await req(apiUrl(`/api/outputs${qs ? `?${qs}` : ""}`));
   return jsonOrThrow(res);
 }
 
 export async function updateOutput(id, patch) {
-  const res = await fetch(apiUrl(`/api/outputs/${id}`), {
+  const res = await req(apiUrl(`/api/outputs/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -127,19 +141,19 @@ export async function updateOutput(id, patch) {
 }
 
 export async function deleteOutput(id) {
-  const res = await fetch(apiUrl(`/api/outputs/${id}`), { method: "DELETE" });
+  const res = await req(apiUrl(`/api/outputs/${id}`), { method: "DELETE" });
   return jsonOrThrow(res);
 }
 
 export async function regenerateCaption(id) {
-  const res = await fetch(apiUrl(`/api/outputs/${id}/caption`), {
+  const res = await req(apiUrl(`/api/outputs/${id}/caption`), {
     method: "POST",
   });
   return jsonOrThrow(res);
 }
 
 export async function importHistoryToBackend(entries) {
-  const res = await fetch(apiUrl("/api/outputs/import"), {
+  const res = await req(apiUrl("/api/outputs/import"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entries }),
@@ -148,7 +162,7 @@ export async function importHistoryToBackend(entries) {
 }
 
 export async function getMetrics() {
-  const res = await fetch(apiUrl("/api/metrics"));
+  const res = await req(apiUrl("/api/metrics"));
   return jsonOrThrow(res);
 }
 
@@ -158,27 +172,27 @@ export async function getMetrics() {
 // fluxo e perguntam como ele foi.
 
 export async function getTikTokAccount() {
-  const res = await fetch(apiUrl("/api/tiktok/account"));
+  const res = await req(apiUrl("/api/tiktok/account"));
   return jsonOrThrow(res);
 }
 
 export async function startTikTokConnect() {
-  const res = await fetch(apiUrl("/api/tiktok/connect"), { method: "POST" });
+  const res = await req(apiUrl("/api/tiktok/connect"), { method: "POST" });
   return jsonOrThrow(res);
 }
 
 export async function getTikTokConnectStatus() {
-  const res = await fetch(apiUrl("/api/tiktok/connect/status"));
+  const res = await req(apiUrl("/api/tiktok/connect/status"));
   return jsonOrThrow(res);
 }
 
 export async function cancelTikTokConnect() {
-  const res = await fetch(apiUrl("/api/tiktok/connect"), { method: "DELETE" });
+  const res = await req(apiUrl("/api/tiktok/connect"), { method: "DELETE" });
   return jsonOrThrow(res);
 }
 
 export async function disconnectTikTok() {
-  const res = await fetch(apiUrl("/api/tiktok/account"), { method: "DELETE" });
+  const res = await req(apiUrl("/api/tiktok/account"), { method: "DELETE" });
   return jsonOrThrow(res);
 }
 
@@ -200,7 +214,7 @@ export async function openAuthorizeUrl(url) {
 // --- Publicar no TikTok ----------------------------------------------------
 
 export async function publishOutput(id, opts = {}) {
-  const res = await fetch(apiUrl(`/api/outputs/${id}/publish`), {
+  const res = await req(apiUrl(`/api/outputs/${id}/publish`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(opts),
@@ -209,19 +223,19 @@ export async function publishOutput(id, opts = {}) {
 }
 
 export async function getPublication(pubId) {
-  const res = await fetch(apiUrl(`/api/publications/${pubId}`));
+  const res = await req(apiUrl(`/api/publications/${pubId}`));
   return jsonOrThrow(res);
 }
 
 export async function listPublications(state) {
   const q = state ? `?state=${encodeURIComponent(state)}` : "";
-  const res = await fetch(apiUrl(`/api/publications${q}`));
+  const res = await req(apiUrl(`/api/publications${q}`));
   return jsonOrThrow(res);
 }
 
 /** Reconsulta um envio no TikTok — o desfecho depende de uma ação fora do app. */
 export async function refreshPublication(pubId) {
-  const res = await fetch(apiUrl(`/api/publications/${pubId}/refresh`), {
+  const res = await req(apiUrl(`/api/publications/${pubId}/refresh`), {
     method: "POST",
   });
   return jsonOrThrow(res);
@@ -229,6 +243,45 @@ export async function refreshPublication(pubId) {
 
 /** Reconsulta de uma vez todos os envios que ainda aguardam ação no TikTok. */
 export async function refreshPublications() {
-  const res = await fetch(apiUrl("/api/publications/refresh"), { method: "POST" });
+  const res = await req(apiUrl("/api/publications/refresh"), { method: "POST" });
+  return jsonOrThrow(res);
+}
+
+// --- Autenticação ----------------------------------------------------------
+
+export async function getAuthStatus() {
+  const res = await req(apiUrl("/api/auth/status"));
+  return jsonOrThrow(res);
+}
+
+export async function setupPassword(senha) {
+  const res = await req(apiUrl("/api/auth/setup"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ senha }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function login(senha) {
+  const res = await req(apiUrl("/api/auth/login"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ senha }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function logout() {
+  const res = await req(apiUrl("/api/auth/logout"), { method: "POST" });
+  return jsonOrThrow(res);
+}
+
+export async function changePassword(atual, nova) {
+  const res = await req(apiUrl("/api/auth/senha"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ atual, nova }),
+  });
   return jsonOrThrow(res);
 }

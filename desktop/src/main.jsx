@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import AuthGate from "./components/AuthGate.jsx";
 import CaptionPage from "./components/CaptionPage.jsx";
 import "./styles.css";
 
@@ -17,7 +18,14 @@ function raiz() {
   } catch (_) {
     legendaId = "";
   }
-  return legendaId ? <CaptionPage outputId={legendaId} /> : <App />;
+  // A pagina da legenda tambem passa pelo portao: ela le o catalogo, e o
+  // backend recusaria a requisicao sem sessao de qualquer forma. Melhor pedir a
+  // senha do que mostrar uma tela de erro no celular.
+  return (
+    <AuthGate>
+      {legendaId ? <CaptionPage outputId={legendaId} /> : <App />}
+    </AuthGate>
+  );
 }
 
 createRoot(document.getElementById("root")).render(

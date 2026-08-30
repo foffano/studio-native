@@ -1751,3 +1751,44 @@ input[type="range"] {
     font-size: 16px;
   }
 }
+
+/* ==========================================================================
+   Tela de login
+   ========================================================================== */
+.auth-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+.auth-box {
+  width: 100%;
+  max-width: 26rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 26px;
+  box-shadow: var(--shadow);
+}
+.auth-box__title {
+  font-size: 22px;
+  margin: 0 0 6px;
+}
+.auth-box__hint {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+.auth-box__erro {
+  color: #f87171;
+  font-size: 14px;
+  margin: 12px 0 0;
+}
+/* 16px impede o iOS de dar zoom ao focar o campo de senha. */
+.auth-box .input {
+  font-size: 16px;
+  width: 100%;
+}
