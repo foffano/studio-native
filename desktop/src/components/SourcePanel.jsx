@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
 import { IconStar, IconTrash, IconPlus } from "./Icons.jsx";
@@ -41,6 +41,27 @@ export default function SourcePanel({
 }) {
   const [saidas, setSaidas] = useState(null);
   const [erro, setErro] = useState("");
+  const caixa = useRef(null);
+
+  // No celular este painel cobre a tela inteira, e o botao de fechar e a unica
+  // saida. Esc fecha tambem -- no desktop porque e o esperado de um painel, no
+  // celular porque um teclado externo continua sendo teclado.
+  useEffect(() => {
+    if (!item) return undefined;
+    const aoTeclar = (e) => {
+      if (e.key === "Escape") onFechar && onFechar();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [item?.id, onFechar]);
+
+  // Leva o foco para o painel ao abrir. Sem isso, quem navega por teclado ou
+  // leitor de tela continuaria na grade: o painel apareceria por cima sem que
+  // nada indicasse que a tela mudou. Foca a caixa, e nao um botao dentro dela
+  // -- assim a leitura comeca pelo titulo em vez de por um controle solto.
+  useEffect(() => {
+    if (item && caixa.current) caixa.current.focus({ preventScroll: true });
+  }, [item?.id]);
 
   useEffect(() => {
     if (!item) return;
@@ -64,7 +85,12 @@ export default function SourcePanel({
   ].filter(Boolean);
 
   return (
-    <aside className="painel" aria-label={`Detalhes de ${item.name}`}>
+    <aside
+      className="painel"
+      aria-label={`Detalhes de ${item.name}`}
+      ref={caixa}
+      tabIndex={-1}
+    >
       <div className="painel__topo">
         <div className="painel__id">
           <div className="painel__thumb">

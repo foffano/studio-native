@@ -2630,3 +2630,57 @@ input[type="range"] {
     flex-basis: 100%;
   }
 }
+
+@media (max-width: 720px) {
+  /* No celular o painel vira tela cheia, e não uma coluna ao lado.
+     Não havia coluna ao lado: com uma coluna só, ele era renderizado **depois
+     de toda a grade** — a 4.600px do topo. Tocar num vídeo parecia não fazer
+     nada, porque a resposta estava fora da tela.
+
+     Cobre também a barra de baixo. É uma tela de detalhe: enquanto ela está
+     aberta, o assunto é aquele vídeo, e navegar para outro lugar é o que o
+     botão de fechar faz. */
+  .painel {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    max-height: none;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: var(--space-4) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    /* Sem isto, chegar ao fim do painel e continuar arrastando rola a grade
+       atras dele -- e ao fechar a lista esta noutro lugar. */
+    overscroll-behavior: contain;
+    /* `--surface` e não `--bg`: opaco de propósito. Meio transparente deixaria
+       a grade aparecer por baixo e as duas telas competiriam. */
+    background: var(--surface);
+  }
+
+  /* O fechar vira o controle mais importante da tela: é a única saída. */
+  .painel__topo {
+    position: sticky;
+    top: calc(var(--space-4) * -1);
+    z-index: 1;
+    margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1) var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .painel__topo .icon-btn {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+    line-height: 1;
+  }
+}
+
+/* O painel recebe foco ao abrir (`tabIndex={-1}`), mas nao e um controle: um
+   anel em volta da tela inteira so confundiria. O que indica a mudanca e a
+   propria tela, e o leitor de tela anuncia o `aria-label`. */
+.painel:focus {
+  outline: none;
+}
