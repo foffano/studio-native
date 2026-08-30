@@ -113,3 +113,28 @@ export const IconSend = (p) => (
     <path d="M22 2 11 13" />
   </svg>
 );
+
+/* Estrela do favorito. `fill` fica "none" por padrão e vira "currentColor"
+   quando marcado — o preenchimento é o que distingue à distância, e cor
+   sozinha não bastaria para quem não a percebe. */
+export const IconStar = (p) => (
+  <svg {...base} {...p}>
+    <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.4l6.1-.9Z" />
+  </svg>
+);
+
+/* Relógio, para "Recentes". */
+export const IconClock = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </svg>
+);
+
+/* Pilha de camadas, para o acervo de produzidos. */
+export const IconLayers = (p) => (
+  <svg {...base} {...p}>
+    <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+    <path d="m3 13 9 5 9-5" />
+  </svg>
+);

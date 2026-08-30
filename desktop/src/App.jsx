@@ -4,7 +4,7 @@ import GenerateView from "./components/GenerateView.jsx";
 import ProducedView from "./components/ProducedView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
-import { getConfig, importHistoryToBackend } from "./api.js";
+import { criarPasta, getConfig, getLibrary, importHistoryToBackend } from "./api.js";
 import { getEntry, loadHistory } from "./lib/history.js";
 import {
   subscribeGeneration,
@@ -35,18 +35,18 @@ async function migrateHistoryOnce() {
   }
 }
 
-const HEADINGS = {
-  generate: { eyebrow: "Estúdio", title: "Produzir vídeo" },
-  produced: { eyebrow: "Estúdio", title: "Produzidos" },
-  library: { eyebrow: "Estúdio", title: "Biblioteca de vídeos" },
-  settings: { eyebrow: "Configuração", title: "Ajustes" },
-};
-
 export default function App() {
-  // Abre na Biblioteca: nao da para produzir sem uma fonte, e e de la que se
-  // escolhe. Abrir no painel de geracao mostrava um formulario que so podia
-  // avisar "va para a Biblioteca".
-  const [view, setView] = useState("library");
+  // Um destino, e nao uma string de tela: area diz onde, secao diz o recorte, e
+  // pastaId a pasta aberta. Com "todos os videos", "favoritos", "lixeira" e uma
+  // pasta qualquer sendo todas a mesma tela com filtros diferentes, uma string
+  // so nao descreve para onde o usuario foi.
+  const [destino, setDestino] = useState({ area: "biblioteca", secao: "todos" });
+
+  // Dados que a barra lateral mostra: contagens e pastas. Vivem aqui porque a
+  // barra e a Biblioteca precisam dos mesmos numeros, e busca-los duas vezes
+  // deixaria os dois lados discordando por alguns segundos.
+  const [navDados, setNavDados] = useState({ contagens: {}, pastas: [], metrics: {} });
+  const [importarPedido, setImportarPedido] = useState(0);
   const [theme, setTheme] = useState(
     () => localStorage.getItem(THEME_KEY) || "light"
   );
@@ -62,6 +62,19 @@ export default function App() {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
+  const recarregarNav = async () => {
+    try {
+      const d = await getLibrary();
+      setNavDados({
+        contagens: d.contagens || {},
+        pastas: d.pastas || [],
+        metrics: d.metrics || {},
+      });
+    } catch (_) {
+      /* barra lateral sem numeros e melhor que tela de erro */
+    }
+  };
+
   const refreshConfig = async () => {
     try {
       setConfig(await getConfig());
@@ -69,6 +82,10 @@ export default function App() {
       setConfig({ api_key_set: false, elevenlabs_available: false });
     }
   };
+
+  useEffect(() => {
+    recarregarNav();
+  }, [destino.area, destino.secao, destino.pastaId]);
 
   useEffect(() => {
     refreshConfig();
@@ -105,25 +122,10 @@ export default function App() {
     }
   };
 
-  // "Nova geracao" agora comeca onde a geracao comeca de verdade: escolhendo
-  // o video.
-  const handleNewChat = () => {
-    setActiveChatId(null);
-    setActiveEntry(null);
-    setLibraryPick(null);
-    setView("library");
-  };
-
-  const handleSelectChat = (entry) => {
-    setActiveChatId(entry.id);
-    setActiveEntry(getEntry(entry.id) || entry);
-    setView("generate");
-  };
-
   const handleGenerationStarted = (jobId, entry) => {
     setActiveChatId(jobId);
     setActiveEntry(entry);
-    setView("generate");
+    setDestino({ area: "gerar" });
     setHistoryVersion((v) => v + 1);
   };
 
@@ -131,57 +133,102 @@ export default function App() {
     setLibraryPick(item);
     setActiveChatId(null);
     setActiveEntry(null);
-    setView("generate");
+    setDestino({ area: "gerar" });
   };
 
-  const head = HEADINGS[view] || HEADINGS.generate;
+  const novaPasta = async () => {
+    const nome = window.prompt("Nome da pasta");
+    if (!nome || !nome.trim()) return;
+    try {
+      const pasta = await criarPasta(nome.trim());
+      await recarregarNav();
+      setDestino({ area: "pasta", pastaId: pasta.id, secao: "fontes" });
+    } catch (e) {
+      window.alert("Não foi possível criar a pasta: " + e.message);
+    }
+  };
+
+  // Importar leva para a Biblioteca e pede a ela que abra a area de upload.
+  // O contador serve de sinal: incrementar dispara o efeito mesmo quando ja
+  // estamos na tela.
+  const importar = () => {
+    setDestino({ area: "biblioteca", secao: "todos" });
+    setImportarPedido((n) => n + 1);
+  };
+
+  // Titulo derivado do destino. Antes era um mapa fixo por tela; com secoes e
+  // pastas, o titulo precisa dizer *onde* voce esta -- "Favoritos" e "Receitas"
+  // sao lugares diferentes dentro da mesma tela.
+  const pastaAtual = (navDados.pastas || []).find((p) => p.id === destino.pastaId);
+  const TITULOS = {
+    biblioteca: {
+      todos: "Todos os vídeos",
+      favoritos: "Favoritos",
+      recentes: "Recentes",
+      lixeira: "Lixeira",
+    },
+    produzidos: {
+      todos: "Produzidos",
+      aguardando: "Esperando no TikTok",
+      publicados: "Publicados",
+    },
+  };
+  const titulo =
+    destino.area === "pasta"
+      ? pastaAtual?.name || "Sem pasta"
+      : destino.area === "ajustes"
+      ? "Ajustes"
+      : destino.area === "gerar"
+      ? "Produzir vídeo"
+      : (TITULOS[destino.area] || {})[destino.secao] || "Studio Native";
 
   return (
     <div className="app">
       <Sidebar
-        view={view}
-        onNavigate={setView}
+        destino={destino}
+        onNavegar={setDestino}
+        onImportar={importar}
+        onNovaPasta={novaPasta}
+        contagens={navDados.contagens}
+        pastas={navDados.pastas}
+        contagensProduzidos={navDados.metrics}
         theme={theme}
-        onToggleTheme={() =>
-          setTheme((t) => (t === "dark" ? "light" : "dark"))
-        }
+        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
         updateState={updateState}
         onUpdateAction={updateAction}
-        activeChatId={activeChatId}
-        onSelectChat={handleSelectChat}
-        onNewChat={handleNewChat}
-        historyVersion={historyVersion}
       />
 
       <main className="content">
         <div className="content__head">
-          <div>
-            <div className="eyebrow">{head.eyebrow}</div>
-            <h1 className="title">{head.title}</h1>
-          </div>
+          <h1 className="title">{titulo}</h1>
         </div>
 
-        {view === "generate" && (
-          <>
-            <GenerateView
-              onBackToLibrary={() => setView("library")}
-              config={config}
-              activeEntry={activeEntry}
-              isNewSession={!activeChatId}
-              libraryPick={libraryPick}
-              onLibraryPickConsumed={() => setLibraryPick(null)}
-              onGenerationStarted={handleGenerationStarted}
-            />
-          </>
+        {destino.area === "gerar" && (
+          <GenerateView
+            onBackToLibrary={() => setDestino({ area: "biblioteca", secao: "todos" })}
+            config={config}
+            activeEntry={activeEntry}
+            isNewSession={!activeChatId}
+            libraryPick={libraryPick}
+            onLibraryPickConsumed={() => setLibraryPick(null)}
+            onGenerationStarted={handleGenerationStarted}
+          />
         )}
 
-        {view === "produced" && <ProducedView />}
+        {destino.area === "produzidos" && <ProducedView secao={destino.secao} />}
 
-        {view === "library" && (
-          <LibraryView onUseForGeneration={handleUseLibrary} />
+        {(destino.area === "biblioteca" || destino.area === "pasta") && (
+          <LibraryView
+            secao={destino.area === "pasta" ? null : destino.secao}
+            pastaId={destino.area === "pasta" ? destino.pastaId : null}
+            pastas={navDados.pastas}
+            importarPedido={importarPedido}
+            onMudou={recarregarNav}
+            onUseForGeneration={handleUseLibrary}
+          />
         )}
 
-        {view === "settings" && <SettingsView onSaved={refreshConfig} />}
+        {destino.area === "ajustes" && <SettingsView onSaved={refreshConfig} />}
       </main>
     </div>
   );

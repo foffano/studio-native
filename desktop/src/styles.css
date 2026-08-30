@@ -1910,3 +1910,139 @@ input[type="range"] {
     flex: 1;
   }
 }
+
+/* ==========================================================================
+   Barra lateral — navegação de gerenciador de mídia
+   ========================================================================== */
+.sidebar__acoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--sidebar-border);
+  margin-bottom: var(--space-2);
+}
+.sidebar__acoes .btn {
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+
+/* A lista rola; as ações no topo e o rodapé ficam fixos. Com muitas pastas, a
+   barra inteira rolando esconderia justamente o botão de criar mais uma. */
+.sidebar__rolagem {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.navitem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 7px var(--space-3);
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.navitem:hover {
+  background: var(--sidebar-panel);
+}
+.navitem--on {
+  background: var(--accent);
+  color: #fff;
+}
+.navitem--on .navitem__num {
+  color: rgba(255, 255, 255, 0.85);
+}
+.navitem__ico {
+  display: flex;
+  flex: 0 0 18px;
+  opacity: 0.85;
+}
+.navitem__txt {
+  flex: 1;
+  /* Nome de pasta longo trunca em vez de quebrar a linha e desalinhar a lista. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.navitem__num {
+  font-size: var(--text-xs);
+  color: var(--sidebar-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav__label--btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  padding-right: var(--space-3);
+}
+.nav__label__seta {
+  font-size: var(--text-sm);
+  opacity: 0.7;
+}
+.nav__vazio {
+  color: var(--sidebar-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  padding: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+/* O rótulo curto só existe no celular. */
+.navitem__curto {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  /* A barra vira rodapé. Some o que é de organizar acervo — importar, criar
+     pasta, seções e a lista de pastas — mas as áreas principais TÊM que ficar,
+     senão o rodapé perde a navegação inteira. */
+  .sidebar__acoes,
+  .nav__label,
+  .nav__label--btn,
+  .nav__vazio,
+  .navitem:not(.navitem--principal):not(.sidebar__footer .navitem) {
+    display: none;
+  }
+  .sidebar__rolagem {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    overflow: visible;
+    min-height: 0;
+  }
+  .navitem--principal {
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    min-height: 52px;
+    font-size: var(--text-xs);
+    text-align: center;
+  }
+  /* No rodapé o nome curto substitui o longo: "Biblioteca" cabe, "Todos os
+     vídeos" não. */
+  .navitem--principal .navitem__txt {
+    display: none;
+  }
+  .navitem--principal .navitem__curto {
+    display: block;
+  }
+  .navitem--principal .navitem__num {
+    display: none;
+  }
+}

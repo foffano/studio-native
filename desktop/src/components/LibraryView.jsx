@@ -31,7 +31,14 @@ function statusLabel(status) {
   return status;
 }
 
-export default function LibraryView({ onUseForGeneration }) {
+export default function LibraryView({
+  secao = "todos",
+  pastaId = null,
+  pastas = [],
+  importarPedido = 0,
+  onMudou,
+  onUseForGeneration,
+}) {
   const [items, setItems] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [drag, setDrag] = useState(false);
@@ -55,14 +62,20 @@ export default function LibraryView({ onUseForGeneration }) {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await getLibrary();
+      const data = await getLibrary(
+        pastaId !== null ? { pasta: pastaId } : { secao }
+      );
       setItems(data.items || []);
       setMetrics(data.metrics || null);
       setError("");
     } catch (e) {
       setError(e.message);
     }
-  }, []);
+  }, [secao, pastaId]);
+
+  useEffect(() => {
+    if (importarPedido > 0) setUploadAberto(true);
+  }, [importarPedido]);
 
   useEffect(() => {
     refresh();

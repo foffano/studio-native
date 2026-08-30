@@ -19,29 +19,46 @@ const FILTROS = [
   { id: "pendentes", rotulo: "Não enviados" },
 ];
 
-export default function ProducedView() {
+export default function ProducedView({ secao = "todos" }) {
   const [itens, setItens] = useState([]);
   const [metricas, setMetricas] = useState(null);
-  const [filtro, setFiltro] = useState("todos");
+  // O filtro vem da barra lateral, mas continua ajustavel aqui: a barra escolhe
+  // por onde voce entrou, os botoes deixam refinar sem sair da tela.
+  const [filtro, setFiltro] = useState(secao);
+
+  useEffect(() => {
+    setFiltro(secao);
+  }, [secao]);
   const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
 
+  const buscar = async () => {
+    const r = await getOutputs({ limit: 200 });
+    setItens(r.items || []);
+    setMetricas(r.metrics || null);
+    setErro("");
+  };
+
   const carregar = async () => {
+    // O acervo aparece primeiro. A reconsulta ao TikTok vem depois, em segundo
+    // plano: ela fala com a rede e leva segundos, e antes bloqueava a lista --
+    // a tela ficava ~4s em branco antes de mostrar qualquer coisa.
+    //
+    // Ela precisa acontecer porque o desfecho de um envio depende de uma acao
+    // fora do app: o usuario concluindo o post dentro do TikTok. Sem
+    // reconsultar, o registro ficaria em "aguardando" para sempre.
     try {
-      // O desfecho de um envio depende de uma acao fora do app -- o usuario
-      // concluindo o post dentro do TikTok. Reconsultamos ao abrir a tela,
-      // senao o registro ficaria em "aguardando" para sempre.
-      await refreshPublications().catch(() => {});
-      const r = await getOutputs({ limit: 200 });
-      setItens(r.items || []);
-      setMetricas(r.metrics || null);
-      setErro("");
+      await buscar();
     } catch (e) {
       setErro(e.message);
     } finally {
       setCarregando(false);
     }
+
+    refreshPublications()
+      .then((r) => (r?.atualizadas ? buscar() : null))
+      .catch(() => {});
   };
 
   useEffect(() => {

@@ -87,11 +87,6 @@ export async function getStatus(jobId) {
 
 export const libraryVideoUrl = (file) => `${BACKEND}/library/${file}`;
 
-export async function getLibrary() {
-  const res = await req(apiUrl("/api/library"));
-  return jsonOrThrow(res);
-}
-
 export async function uploadToLibrary(file) {
   const fd = new FormData();
   fd.append("video", file);
@@ -289,5 +284,58 @@ export async function changePassword(atual, nova) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ atual, nova }),
   });
+  return jsonOrThrow(res);
+}
+
+// --- Pastas, favoritos e lixeira -------------------------------------------
+
+export async function getLibrary(opts = {}) {
+  const q = new URLSearchParams();
+  if (opts.secao) q.set("secao", opts.secao);
+  if (opts.pasta !== undefined && opts.pasta !== null) q.set("pasta", opts.pasta);
+  const s = q.toString();
+  const res = await req(apiUrl(`/api/library${s ? "?" + s : ""}`));
+  return jsonOrThrow(res);
+}
+
+export async function criarPasta(nome) {
+  const res = await req(apiUrl("/api/folders"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nome }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function renomearPasta(id, nome) {
+  const res = await req(apiUrl(`/api/folders/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nome }),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function apagarPasta(id) {
+  const res = await req(apiUrl(`/api/folders/${id}`), { method: "DELETE" });
+  return jsonOrThrow(res);
+}
+
+export async function alternarFavorito(id) {
+  const res = await req(apiUrl(`/api/library/${id}/favorito`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function restaurarVideo(id) {
+  const res = await req(apiUrl(`/api/library/${id}/restaurar`), { method: "POST" });
+  return jsonOrThrow(res);
+}
+
+export async function esvaziarLixeira() {
+  const res = await req(apiUrl("/api/library/lixeira"), { method: "DELETE" });
   return jsonOrThrow(res);
 }
