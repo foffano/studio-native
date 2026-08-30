@@ -1,16 +1,44 @@
 import React, { useEffect, useState } from "react";
 import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
+import { IconStar, IconTrash, IconPlus } from "./Icons.jsx";
 import { getOutputs, libraryVideoUrl, outputUrl } from "../api.js";
 
+function fmtDur(sec) {
+  if (!sec) return "";
+  const s = Math.round(sec);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}:${String(s % 60).padStart(2, "0")}` : `${s}s`;
+}
+
 /**
- * O que saiu de um vídeo-fonte.
+ * Tudo sobre um vídeo-fonte: o que ele é, o que já saiu dele, e o que dá para
+ * fazer com ele.
  *
  * Abre ao lado da Biblioteca, e não numa aba separada, porque a pergunta que
  * ele responde é comparativa: "o que já fiz com este vídeo?". Trocar de tela
  * para responder isso obrigaria a lembrar de qual fonte se estava falando.
+ *
+ * Desde que o card virou só o quadro do vídeo, este painel é o **único** lugar
+ * com os controles. Isso não é só arrumação: o seletor de pasta aqui dentro é
+ * a alternativa que a WCAG 2.2 exige para o arrastar — sem ele, quem não usa
+ * mouse não teria como organizar nada.
  */
-export default function SourcePanel({ item, onFechar, onProduzir }) {
+export default function SourcePanel({
+  item,
+  pastas = [],
+  naLixeira = false,
+  tagDraft = "",
+  onTagDraft,
+  onAddTag,
+  onRemoveTag,
+  onFavoritar,
+  onMoverPara,
+  onRestaurar,
+  onExcluir,
+  onFechar,
+  onProduzir,
+}) {
   const [saidas, setSaidas] = useState(null);
   const [erro, setErro] = useState("");
 
@@ -29,8 +57,14 @@ export default function SourcePanel({ item, onFechar, onProduzir }) {
 
   if (!item) return null;
 
+  const detalhes = [
+    fmtDur(item.duration_sec),
+    item.size_bytes ? `${(item.size_bytes / (1024 * 1024)).toFixed(1)} MB` : "",
+    item.created_at ? new Date(item.created_at).toLocaleDateString("pt-BR") : "",
+  ].filter(Boolean);
+
   return (
-    <aside className="painel" aria-label={`Produzidos a partir de ${item.name}`}>
+    <aside className="painel" aria-label={`Detalhes de ${item.name}`}>
       <div className="painel__topo">
         <div className="painel__id">
           <div className="painel__thumb">
@@ -38,13 +72,7 @@ export default function SourcePanel({ item, onFechar, onProduzir }) {
           </div>
           <div className="painel__titulo">
             <h2 title={item.name}>{item.name}</h2>
-            <p className="muted">
-              {saidas === null
-                ? "carregando..."
-                : saidas.length === 0
-                ? "nada produzido ainda"
-                : `${saidas.length} ${saidas.length === 1 ? "vídeo produzido" : "vídeos produzidos"}`}
-            </p>
+            <p className="muted">{detalhes.join(" · ")}</p>
           </div>
         </div>
         <button className="icon-btn" onClick={onFechar} title="Fechar" aria-label="Fechar">
@@ -52,22 +80,108 @@ export default function SourcePanel({ item, onFechar, onProduzir }) {
         </button>
       </div>
 
-      <button
-        className="btn btn--primary btn--block"
-        disabled={item.status !== "ready"}
-        onClick={onProduzir}
-      >
-        Produzir mais um vídeo
-      </button>
+      {naLixeira ? (
+        <div className="painel__acoes">
+          <button className="btn btn--primary btn--block" onClick={onRestaurar}>
+            Restaurar
+          </button>
+          <button className="btn btn--danger btn--block" onClick={onExcluir}>
+            Apagar em definitivo
+          </button>
+        </div>
+      ) : (
+        <>
+          <button
+            className="btn btn--primary btn--block"
+            disabled={item.status !== "ready"}
+            onClick={onProduzir}
+          >
+            Produzir vídeo a partir deste
+          </button>
+
+          <div className="painel__barra">
+            <button
+              className={"icon-btn" + (item.favorito ? " icon-btn--on" : "")}
+              onClick={onFavoritar}
+              aria-pressed={!!item.favorito}
+              title={item.favorito ? "Tirar dos favoritos" : "Marcar como favorito"}
+            >
+              <IconStar width={16} height={16} fill={item.favorito ? "currentColor" : "none"} />
+            </button>
+
+            {/* A alternativa de um clique ao arrastar. Some junto com o
+                arrastar quando o vídeo está na lixeira. */}
+            <label className="painel__pasta">
+              <span className="sr-only">Pasta</span>
+              <select
+                className="input input--sm"
+                value={item.folder_id || ""}
+                onChange={(e) => onMoverPara(e.target.value)}
+              >
+                <option value="">Sem pasta</option>
+                {pastas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button className="icon-btn icon-btn--perigo" onClick={onExcluir} title="Mover para a lixeira">
+              <IconTrash width={16} height={16} />
+            </button>
+          </div>
+
+          <div className="painel__tags">
+            <div className="chips">
+              {(item.tags || []).map((t) => (
+                <button
+                  className="chip chip--x"
+                  key={t}
+                  onClick={() => onRemoveTag(t)}
+                  title={`Remover a tag ${t}`}
+                >
+                  {t} <span aria-hidden="true">×</span>
+                </button>
+              ))}
+            </div>
+            <form
+              className="painel__tagform"
+              onSubmit={(e) => {
+                e.preventDefault();
+                onAddTag();
+              }}
+            >
+              <input
+                className="input input--sm"
+                placeholder="Nova tag"
+                value={tagDraft}
+                onChange={(e) => onTagDraft(e.target.value)}
+              />
+              <button className="icon-btn" title="Adicionar tag" disabled={!tagDraft.trim()}>
+                <IconPlus width={14} height={14} />
+              </button>
+            </form>
+          </div>
+        </>
+      )}
 
       {erro && <p className="painel__erro">{erro}</p>}
+
+      <h3 className="painel__secao">
+        {saidas === null
+          ? "Produzidos"
+          : saidas.length === 0
+          ? "Produzidos"
+          : `Produzidos · ${saidas.length}`}
+      </h3>
 
       <div className="painel__lista">
         {saidas === null && <p className="muted">Carregando...</p>}
 
         {saidas !== null && saidas.length === 0 && (
           <p className="muted painel__vazio">
-            Nada produzido a partir deste vídeo ainda. O botão acima começa.
+            Nada produzido a partir deste vídeo ainda.
           </p>
         )}
 

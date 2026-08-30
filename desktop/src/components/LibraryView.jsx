@@ -60,7 +60,7 @@ export default function LibraryView({
   // justamente mostrar a acao em vez de uma tela em branco.
   const [uploadAberto, setUploadAberto] = useState(false);
   const [dias, setDias] = useState(30);
-  const [selecionado, setSelecionado] = useState(null);
+  const [selecionadoId, setSelecionadoId] = useState(null);
   const [arrastando, setArrastando] = useState(null);   // id do video em movimento
   const [alvo, setAlvo] = useState(null);               // id sob o cursor
   const pollRef = useRef(null);
@@ -70,6 +70,10 @@ export default function LibraryView({
   // recentes, lixeira -- o recorte e o assunto, e esconder por pasta la
   // esconderia justamente o que a secao existe para mostrar.
   const naRaiz = secao === "todos" && pastaId === null;
+
+  // Deriva de `items` em vez de guardar o objeto: assim o painel acompanha
+  // qualquer mudanca feita por ele mesmo (favoritar, mover de pasta, tags).
+  const selecionado = items.find((i) => i.id === selecionadoId) || null;
 
   const visiveis = items.filter((i) => {
     if (naRaiz && (i.folder_id || "")) return false;
@@ -234,13 +238,15 @@ export default function LibraryView({
     const pergunta = naLixeira
       ? "Apagar este vídeo em definitivo? O arquivo some do disco."
       : `Mover para a lixeira? Fica lá por ${dias} dias antes de sumir de vez.`;
-    if (!confirm(pergunta)) return;
+    if (!confirm(pergunta)) return false;
     try {
       await deleteLibraryItem(id);
       await refresh();
       onMudou && onMudou();
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     }
   };
 
@@ -408,21 +414,10 @@ export default function LibraryView({
             <LibraryCard
               key={item.id}
               item={item}
-              tagDraft={tagDraft[item.id] || ""}
-              onTagDraft={(v) => setTagDraft((d) => ({ ...d, [item.id]: v }))}
-              onAddTag={() => addTag(item.id, item.tags)}
-              onRemoveTag={(tag) => removeTag(item.id, item.tags, tag)}
-              onDelete={() => del(item.id)}
-              onGenerate={() => onUseForGeneration && onUseForGeneration(item)}
-              selecionado={selecionado?.id === item.id}
+              selecionado={selecionadoId === item.id}
               onSelecionar={() =>
-                setSelecionado((a) => (a?.id === item.id ? null : item))
+                setSelecionadoId((a) => (a === item.id ? null : item.id))
               }
-              onFavoritar={() => favoritar(item.id)}
-              onMoverPara={(fid) => moverPara(item.id, fid)}
-              onRestaurar={() => restaurar(item.id)}
-              pastas={pastas}
-              naLixeira={naLixeira}
               arrastavel={!naLixeira}
               arrastandoSobre={alvo === item.id}
               onDragStart={(e) => {
@@ -453,7 +448,21 @@ export default function LibraryView({
         {selecionado && (
           <SourcePanel
             item={selecionado}
-            onFechar={() => setSelecionado(null)}
+            pastas={pastas}
+            naLixeira={naLixeira}
+            tagDraft={tagDraft[selecionado.id] || ""}
+            onTagDraft={(v) =>
+              setTagDraft((d) => ({ ...d, [selecionado.id]: v }))
+            }
+            onAddTag={() => addTag(selecionado.id, selecionado.tags)}
+            onRemoveTag={(tag) => removeTag(selecionado.id, selecionado.tags, tag)}
+            onFavoritar={() => favoritar(selecionado.id)}
+            onMoverPara={(fid) => moverPara(selecionado.id, fid)}
+            onRestaurar={() => restaurar(selecionado.id)}
+            onExcluir={async () => {
+              if (await del(selecionado.id)) setSelecionadoId(null);
+            }}
+            onFechar={() => setSelecionadoId(null)}
             onProduzir={() => onUseForGeneration && onUseForGeneration(selecionado)}
           />
         )}
@@ -463,21 +472,22 @@ export default function LibraryView({
   );
 }
 
+/**
+ * Um vídeo na grade: só o quadro.
+ *
+ * Sem nome, sem metadado, sem controle. Numa grade de dezenas de vídeos, o que
+ * identifica cada um é a imagem — o nome de arquivo (`IMG_0826(1).MOV`) não
+ * diz nada, e os controles repetidos em cada card enchiam a tela de botões que
+ * quase nunca são usados.
+ *
+ * Tudo que era daqui vive agora no painel, aberto ao clicar. A única exceção é
+ * o estado: um vídeo ainda processando ou com erro é indistinguível de um
+ * pronto pela imagem, e essa diferença decide se dá para produzir com ele.
+ */
 function LibraryCard({
   item,
-  tagDraft,
-  onTagDraft,
-  onAddTag,
-  onRemoveTag,
-  onDelete,
-  onGenerate,
-  onFavoritar,
-  onMoverPara,
-  onRestaurar,
   onSelecionar,
   selecionado = false,
-  pastas = [],
-  naLixeira = false,
   arrastavel = false,
   arrastandoSobre = false,
   ...dnd
@@ -489,143 +499,42 @@ function LibraryCard({
   return (
     <div
       className={
-        "lib-card" +
-        (pending ? " lib-card--busy" : "") +
-        (selecionado ? " lib-card--on" : "") +
-        (arrastandoSobre ? " lib-card--alvo" : "")
+        "vcard" +
+        (selecionado ? " vcard--on" : "") +
+        (arrastandoSobre ? " vcard--alvo" : "")
       }
       draggable={arrastavel}
       {...dnd}
     >
-      {/* A miniatura e o nome abrem o painel; os controles do corpo continuam
-          com as acoes deles. Botao, e nao div com onClick, para funcionar com
-          teclado sem precisar de tabindex e handler de tecla a mao. */}
       <button
-        className="lib-card__abrir"
+        className="vcard__abrir"
         onClick={onSelecionar}
         aria-pressed={selecionado}
-        title="Ver o que foi produzido a partir deste vídeo"
+        aria-label={item.name}
+        title={item.name}
       >
-      <div className="lib-card__media">
         {url ? (
           <LazyVideo src={url} />
         ) : (
-          <div className="lib-card__placeholder">
-            {pending ? <span className="spinner" /> : <IconVideo width={28} height={28} />}
+          <div className="vcard__placeholder">
+            {pending ? <span className="spinner" /> : <IconVideo width={24} height={24} />}
           </div>
         )}
-        <span className={"lib-card__status lib-card__status--" + item.status}>
-          {statusLabel(item.status)}
-        </span>
 
-        {!naLixeira && (
-          <button
-            className={"lib-card__fav" + (item.favorito ? " is-on" : "")}
-            onClick={onFavoritar}
-            title={item.favorito ? "Remover dos favoritos" : "Marcar como favorito"}
-            aria-pressed={!!item.favorito}
-          >
-            {/* O preenchimento e o que distingue a distancia; cor sozinha nao
-                bastaria para quem nao a percebe. */}
-            <IconStar width={16} height={16} fill={item.favorito ? "currentColor" : "none"} />
-          </button>
-        )}
-      </div>
-
-      <div className="lib-card__nome-linha">
-        <div className="lib-card__name" title={item.name}>
-          {item.name}
-        </div>
-      </div>
-      </button>
-
-      <div className="lib-card__body">
-        <div className="lib-card__meta">
-          {fmtDur(item.duration_sec)}
-          {item.size_bytes ? ` · ${fmtSize(item.size_bytes)}` : ""}
-          {item.produced_count > 0 && (
-            <>
-              {" · "}
-              <strong>{item.produced_count}</strong> vídeos ·{" "}
-              <strong>{item.published_count}</strong> publicados
-            </>
-          )}
-        </div>
-
-        {item.status === "error" && item.error && (
-          <div className="lib-card__err">{item.error}</div>
-        )}
-        {pending && item.message && (
-          <div className="lib-card__msg">{item.message}</div>
-        )}
-
-        <div className="lib-card__tags">
-          {(item.tags || []).map((tag) => (
-            <span className="lib-tag" key={tag}>
-              {tag}
-              <button type="button" onClick={() => onRemoveTag(tag)} aria-label="Remover tag">
-                ×
-              </button>
-            </span>
-          ))}
-          <span className="lib-tag-add">
-            <input
-              placeholder="+ tag"
-              value={tagDraft}
-              onChange={(e) => onTagDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onAddTag()}
-            />
-            <button type="button" onClick={onAddTag} title="Adicionar tag">
-              <IconPlus width={12} height={12} />
-            </button>
+        {/* Só aparece quando NÃO está pronto. Um selo "Pronto" em todo card
+            seria ruído: pronto é o estado esperado. */}
+        {!ready && (
+          <span className={"vcard__estado vcard__estado--" + item.status}>
+            {statusLabel(item.status)}
           </span>
-        </div>
-
-        {naLixeira ? (
-          <div className="lib-card__actions">
-            <button className="btn btn--ghost" onClick={onRestaurar}>
-              <IconRefresh width={15} height={15} /> Restaurar
-            </button>
-            <button
-              className="icon-btn icon-btn--perigo"
-              onClick={onDelete}
-              title="Apagar definitivamente"
-            >
-              <IconTrash width={15} height={15} />
-            </button>
-          </div>
-        ) : (
-          <>
-            {pastas.length > 0 && (
-              <select
-                className="input lib-card__pasta"
-                value={item.folder_id || ""}
-                onChange={(e) => onMoverPara(e.target.value)}
-                aria-label="Pasta"
-              >
-                <option value="">Sem pasta</option>
-                {pastas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <div className="lib-card__actions">
-              <button
-                className="btn btn--primary"
-                disabled={!ready}
-                onClick={onGenerate}
-              >
-                Produzir vídeo
-              </button>
-              <button className="icon-btn" onClick={onDelete} title="Mover para a lixeira">
-                <IconTrash width={15} height={15} />
-              </button>
-            </div>
-          </>
         )}
-      </div>
+
+        {item.favorito && (
+          <span className="vcard__fav" aria-hidden="true">
+            <IconStar width={14} height={14} fill="currentColor" />
+          </span>
+        )}
+      </button>
     </div>
   );
 }
