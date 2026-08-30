@@ -11,6 +11,7 @@ import {
   libraryVideoUrl,
 } from "../api.js";
 import LazyVideo from "./LazyVideo.jsx";
+import SourcePanel from "./SourcePanel.jsx";
 import { IconUpload, IconTrash, IconVideo, IconPlus, IconStar, IconRefresh } from "./Icons.jsx";
 
 function fmtDur(sec) {
@@ -56,6 +57,7 @@ export default function LibraryView({
   // justamente mostrar a acao em vez de uma tela em branco.
   const [uploadAberto, setUploadAberto] = useState(false);
   const [dias, setDias] = useState(30);
+  const [selecionado, setSelecionado] = useState(null);
   const pollRef = useRef(null);
 
   const visiveis = items.filter((i) => {
@@ -336,6 +338,7 @@ export default function LibraryView({
           </button>
         </div>
       ) : (
+        <div className={"lib-layout" + (selecionado ? " lib-layout--com-painel" : "")}>
         <div className="lib-grid">
           {visiveis.map((item) => (
             <LibraryCard
@@ -347,6 +350,10 @@ export default function LibraryView({
               onRemoveTag={(tag) => removeTag(item.id, item.tags, tag)}
               onDelete={() => del(item.id)}
               onGenerate={() => onUseForGeneration && onUseForGeneration(item)}
+              selecionado={selecionado?.id === item.id}
+              onSelecionar={() =>
+                setSelecionado((a) => (a?.id === item.id ? null : item))
+              }
               onFavoritar={() => favoritar(item.id)}
               onMoverPara={(fid) => moverPara(item.id, fid)}
               onRestaurar={() => restaurar(item.id)}
@@ -354,6 +361,15 @@ export default function LibraryView({
               naLixeira={naLixeira}
             />
           ))}
+        </div>
+
+        {selecionado && (
+          <SourcePanel
+            item={selecionado}
+            onFechar={() => setSelecionado(null)}
+            onProduzir={() => onUseForGeneration && onUseForGeneration(selecionado)}
+          />
+        )}
         </div>
       )}
     </>
@@ -371,6 +387,8 @@ function LibraryCard({
   onFavoritar,
   onMoverPara,
   onRestaurar,
+  onSelecionar,
+  selecionado = false,
   pastas = [],
   naLixeira = false,
 }) {
@@ -379,7 +397,22 @@ function LibraryCard({
   const url = ready && item.file ? libraryVideoUrl(item.file) : null;
 
   return (
-    <div className={"lib-card" + (pending ? " lib-card--busy" : "")}>
+    <div
+      className={
+        "lib-card" +
+        (pending ? " lib-card--busy" : "") +
+        (selecionado ? " lib-card--on" : "")
+      }
+    >
+      {/* A miniatura e o nome abrem o painel; os controles do corpo continuam
+          com as acoes deles. Botao, e nao div com onClick, para funcionar com
+          teclado sem precisar de tabindex e handler de tecla a mao. */}
+      <button
+        className="lib-card__abrir"
+        onClick={onSelecionar}
+        aria-pressed={selecionado}
+        title="Ver o que foi produzido a partir deste vídeo"
+      >
       <div className="lib-card__media">
         {url ? (
           <LazyVideo src={url} />
@@ -406,10 +439,14 @@ function LibraryCard({
         )}
       </div>
 
-      <div className="lib-card__body">
+      <div className="lib-card__nome-linha">
         <div className="lib-card__name" title={item.name}>
           {item.name}
         </div>
+      </div>
+      </button>
+
+      <div className="lib-card__body">
         <div className="lib-card__meta">
           {fmtDur(item.duration_sec)}
           {item.size_bytes ? ` · ${fmtSize(item.size_bytes)}` : ""}

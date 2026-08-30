@@ -2240,3 +2240,148 @@ input[type="range"] {
   color: #f87171;
   font-size: var(--text-sm);
 }
+
+/* ==========================================================================
+   Biblioteca com painel lateral
+   ==========================================================================
+   A grade encolhe em vez de o painel cobrir o conteúdo: sobrepor esconderia
+   justamente o vídeo que se acabou de clicar, e o painel existe para comparar
+   fonte e resultado.
+   ========================================================================== */
+.lib-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+.lib-layout--com-painel {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+}
+
+.painel {
+  /* Acompanha a rolagem: com dezenas de fontes, o painel sumiria da tela
+     enquanto o usuário procura a próxima. */
+  position: sticky;
+  top: 0;
+  max-height: calc(100dvh - var(--space-6));
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+}
+.painel__topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.painel__id {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.painel__thumb {
+  position: relative;
+  width: 56px;
+  flex: 0 0 56px;
+  aspect-ratio: 3 / 4;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+.painel__titulo h2 {
+  font-size: var(--text-md);
+  margin: 0 0 2px;
+  /* Nome longo trunca: quebrar empurraria o botão de fechar para fora. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 15rem;
+}
+.painel__titulo p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.painel__lista {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.painel__vazio {
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+.painel__erro {
+  color: #f87171;
+  font-size: var(--text-sm);
+}
+
+.saida {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.saida__media {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  background: #000;
+}
+.saida__corpo {
+  padding: var(--space-3);
+}
+.saida__frase {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin: 0 0 var(--space-1);
+}
+.saida__legenda {
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.saida__meta {
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  margin: var(--space-2) 0 0;
+}
+
+/* A parte de cima do card vira botão. */
+.lib-card__abrir {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lib-card__nome-linha {
+  padding: var(--space-3) var(--space-3) 0;
+}
+.lib-card--on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Lado a lado exige espaco para as duas coisas: ~380px de painel, mais duas
+   colunas de grade (460px), mais a barra lateral (200px). Abaixo de 1100px o
+   painel vai para baixo da grade -- medido a 800px, a grade caia para uma
+   unica coluna espremida ao lado do painel, que e pior que empilhar. */
+@media (max-width: 1100px) {
+  .lib-layout--com-painel {
+    grid-template-columns: 1fr;
+  }
+  .painel {
+    position: static;
+    max-height: none;
+  }
+}
