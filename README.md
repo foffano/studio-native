@@ -8,8 +8,8 @@ tela, a legenda do post e ate 5 hashtags. O texto e sobreposto **localmente** co
 MoviePy + Pillow + ffmpeg. Opcionalmente ha narracao por voz (**ElevenLabs**). No
 fim, o video vai para o seu TikTok com um clique.
 
-Roda de duas formas, com o mesmo codigo: **app nativo** (Electron, Windows) ou
-**no navegador** — e, nesse modo, da para abrir pelo celular por um tunel.
+Roda como um **servico no seu PC**, em segundo plano, e se usa **pelo
+navegador** — no proprio computador ou, com um tunel, do celular.
 
 > **Privacidade:** o video **nunca** e enviado a OpenRouter nem a ElevenLabs —
 > elas recebem so texto. Na publicacao, o MP4 vai do seu computador **direto**
@@ -21,23 +21,47 @@ Roda de duas formas, com o mesmo codigo: **app nativo** (Electron, Windows) ou
 
 ## Como instalar
 
-### O jeito rapido: instalador do Windows
+Ate a versao 1.3 isto era um `.exe` do Electron. Nao e mais: virou um servico
+que fica de pe no seu PC e se abre pelo navegador. A troca resolveu o problema
+que o `.exe` nunca resolveu — usar do celular — e de quebra tirou 600 MB de
+Chromium empacotado.
 
-1. Abra a pagina de releases:
-   **https://github.com/foffano/studio-native/releases/latest**
-2. Baixe **`Studio-Native-Setup-x.y.z.exe`** (o instalador). Se preferir nao
-   instalar nada, baixe **`Studio-Native-x.y.z.exe`** — a versao portatil, que
-   roda direto.
-3. Execute o arquivo. O SmartScreen do Windows vai avisar que o app e de
-   desenvolvedor desconhecido, porque o executavel **nao e assinado
-   digitalmente** — clique em *Mais informacoes* -> *Executar assim mesmo*.
-4. Escolha a pasta de instalacao e conclua.
+**Precisa uma vez:** Python 3.10+, Node.js 18+ e Git.
 
-Nao e preciso instalar Python, Node nem ffmpeg: tudo vai dentro do instalador.
-E por isso que ele tem cerca de 600 MB.
+```bash
+git clone https://github.com/foffano/studio-native.git
+cd studio-native
+pip install -r requirements.txt
+python tools/fetch_ffmpeg.py     # baixa ffmpeg/ffprobe para bin/
+cd desktop && npm install && npm run build && cd ..
+```
 
-**Atualizacoes** sao automaticas: o app verifica novas releases no GitHub e avisa
-na barra lateral.
+**Deixar rodando em segundo plano:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\instalar-servico.ps1
+```
+
+Isso cria uma tarefa no Agendador do Windows que sobe o app quando voce entra na
+maquina, sem janela nenhuma. Depois disso o app vive em
+**http://127.0.0.1:5050**.
+
+> A tarefa roda **como o seu usuario do Windows**, e isso nao e detalhe: os
+> tokens do TikTok sao cifrados com DPAPI, amarrados a sua conta. Como SYSTEM, a
+> decifragem falharia e o app pediria para reconectar a conta sem explicar por
+> que.
+
+**Na primeira vez que abrir**, o app pede para criar uma senha. E ela que separa
+o app do resto da internet quando ha um tunel de pe.
+
+**Atualizar:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\atualizar.ps1
+```
+
+Puxa o codigo, reconstroi o front e reinicia o servico. Se o build falhar, o
+servico **nao** e reiniciado: continua servindo a versao que funcionava.
 
 ### Primeiros passos dentro do app
 
@@ -64,28 +88,22 @@ numero de variacoes, altura e estilo do texto, e gere.
 Seus dados ficam em `%APPDATA%\StudioNative\`: configuracoes, biblioteca, videos
 produzidos e o catalogo (`studio.db`).
 
-### Abrir no navegador (e usar pelo celular)
+### Usar pelo celular
 
-O mesmo app roda sem Electron, servido pelo proprio backend:
-
-```bash
-cd desktop && npm run build     # so na primeira vez, ou apos mexer na UI
-python app.py                   # http://127.0.0.1:5050
-```
-
-Com um tunel, isso vira acessivel do celular:
+O app ja e uma pagina web; falta so um endereco que o telefone alcance.
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:5050
 ```
 
 Abaixo de 720px a interface se reorganiza: a barra lateral vira barra fixa no pe.
+Em **Ajustes** ha um QR com o endereco, para nao ter que digitar.
 
-> **Atencao: o backend nao tem autenticacao.** Isso nunca importou enquanto ele
-> so escutava em `127.0.0.1`, mas atras de um tunel **quem tiver a URL tem o app
-> inteiro** — pode gerar videos gastando seus creditos, publicar no seu TikTok e
-> alterar as configuracoes. Proteja com **Cloudflare Access** antes de deixar o
-> tunel de pe. Detalhes em [`docs/modo-navegador.md`](docs/modo-navegador.md).
+> **Antes de deixar um tunel de pe:** o app pede senha, mas o hostname publico
+> aparece nos registros de Certificate Transparency minutos depois de criado, e
+> bots os varrem. Proteger com **Cloudflare Access** barra o trafego antes de
+> ele chegar nesta maquina. Detalhes em
+> [`docs/modo-navegador.md`](docs/modo-navegador.md).
 
 ---
 
@@ -117,8 +135,7 @@ voce revisa, adiciona o produto (o "carrinho laranja") e publica.
   cifrados com o **DPAPI do Windows** — amarrados a sua conta de usuario e
   ilegiveis se o arquivo for copiado para outra maquina. A sessao renova sozinha
   30 minutos antes de vencer.
-- **O `client_secret` nao viaja no `.exe`.** Qualquer um abriria o pacote do
-  Electron e o leria. Ele mora num Cloudflare Worker
+- **O `client_secret` nao fica neste computador.** Ele mora num Cloudflare Worker
   ([`services/tiktok-auth/`](services/tiktok-auth/)), que faz a troca de token em
   nome do app.
 - **O video vai direto** do seu disco para o TikTok, em pedacos. Nenhum servidor
@@ -143,9 +160,8 @@ caminho que nao usamos.
 Entao, depois do envio, o card mostra a legenda com as hashtags e dois caminhos:
 
 - **Copiar legenda** — util se voce finaliza pelo TikTok web.
-- **Ler no celular** — um QR code. Se o app estiver sendo servido por HTTP (modo
-  navegador ou tunel), o QR abre uma **pagina com botao de copiar** no telefone.
-  No Electron, onde nao ha endereco que o celular alcance, o QR carrega o texto.
+- **Ler no celular** — um QR code que abre uma **pagina com botao de copiar** no
+  telefone. Colar a legenda la e mais rapido do que digitar do zero.
 
 ### Modo sandbox
 
@@ -165,32 +181,36 @@ Material do cadastro e o passo a passo do portal estao em
 ## Arquitetura
 
 ```
-        Electron (janela nativa)            ou          Navegador
-   +---------------------------------+        +------------------------+
-   |  React  <--HTTP-->  Flask       |        |  React servido pelo    |
-   |  (file://)          (porta      |        |  proprio Flask, mesma  |
-   |                      sorteada)  |        |  origem  (:5050)       |
-   +---------------------------------+        +------------------------+
-                    |                                     |
-                    +------------------+------------------+
-                                       |
-                        app.py + MoviePy + Pillow + ffmpeg
-                        store.py (SQLite) - tiktok.py - secretbox.py
-                                       |
-                        Cloudflare Worker (so troca de token)
-                        MP4 --> TikTok, direto, sem intermediario
+   Navegador (PC)          Navegador (celular)
+        |                          |
+        |                   Cloudflare Tunnel
+        |                          |
+        +-----------+--------------+
+                    |
+             Flask em :5050
+      serve o React construido E a API,
+             na mesma origem
+                    |
+        app.py + MoviePy + Pillow + ffmpeg
+        store.py (SQLite) - tiktok.py - secretbox.py
+                    |
+        Cloudflare Worker (so troca de token)
+        MP4 --> TikTok, direto, sem intermediario
 ```
 
-- **Frontend:** React (Vite), em `desktop/`.
-- **Shell:** Electron (`desktop/electron/main.cjs`) abre a janela e **sobe o
-  backend Flask** numa porta livre, encerrando-o ao fechar.
-- **Backend:** `app.py` (Flask/MoviePy/ffmpeg/OpenRouter/ElevenLabs). Em producao
-  vira executavel *sidecar* com **PyInstaller** — o usuario final nao precisa de
-  Python. **ffmpeg/ffprobe vao dentro do pacote** (pasta `bin/`), resolvidos via
-  `sys._MEIPASS`; o app nao depende do ffmpeg do sistema.
-- **Modo navegador:** o Flask serve o front construido em `/`. O React detecta e
-  usa a **mesma origem** — e isso que faz funcionar pelo celular, ja que uma URL
-  absoluta com `127.0.0.1` faria o telefone tentar conectar nele mesmo.
+- **Frontend:** React (Vite), em `desktop/`. Construido para `desktop/dist/`.
+- **Backend:** `app.py` (Flask/MoviePy/ffmpeg/OpenRouter/ElevenLabs), servido por
+  **waitress**. Serve tambem o front em `/`, na **mesma origem** — e isso que faz
+  funcionar pelo celular, ja que uma URL absoluta com `127.0.0.1` faria o
+  telefone tentar conectar nele mesmo.
+- **Nao ha shell nativo.** O Electron foi aposentado na 1.4: existia para abrir
+  uma janela e subir o backend, e o servico faz as duas coisas melhor. A pasta
+  continua chamando `desktop/` por inercia do historico.
+- **ffmpeg/ffprobe** ficam em `bin/`, baixados por `tools/fetch_ffmpeg.py`; o
+  backend os prioriza sobre os do sistema.
+- **Autenticacao:** senha com scrypt e sessao por cookie assinado (`auth.py`).
+  Todas as rotas sao privadas por padrao — a lista de excecoes em `PUBLICAS` e
+  curta e explicita.
 - **Chaves de API** ficam em `%APPDATA%/StudioNative/config.json` (com fallback
   para variaveis de ambiente/`.env`).
 
@@ -203,55 +223,35 @@ Material do cadastro e o passo a passo do portal estao em
 
 ## Rodar em desenvolvimento
 
-```bash
-# 1) deps Python (uma vez)
-pip install -r requirements.txt
-
-# 2) deps do app desktop (uma vez)
-cd desktop
-npm install
-
-# 3) sobe Vite + Electron + backend Python (python app.py) juntos
-npm run dev
-```
-
-O `npm run dev` inicia o Vite (porta 5173), aguarda, e abre o Electron — que escolhe uma porta livre, sobe `python app.py` com `STUDIO_PORT`, espera o `/api/health` e carrega a UI. As chaves podem ser inseridas na aba **Ajustes** (ou via `.env` na raiz).
-
-> Para depurar só o backend, rode `python app.py`; ele expõe apenas a API local usada pelo Electron. A porta vem de `STUDIO_PORT`/`PORT` (default 5050).
-
-## Gerar o instalável (.exe)
-
-O empacotamento tem **duas etapas**: (1) backend Python → executável sidecar com PyInstaller; (2) Electron + React → instalador com electron-builder (que inclui o sidecar como recurso).
+Sao dois processos, em dois terminais:
 
 ```bash
-# (a) baixa ffmpeg/ffprobe para bin/ (empacotados no sidecar)
-python tools/fetch_ffmpeg.py
-
-# (b) empacota o backend Python como sidecar (gera dist/StudioNativeBackend/)
-pip install -r requirements.txt
-pyinstaller studio_native_backend.spec --noconfirm
-
-# (c) gera o instalador NSIS + portable (inclui dist/StudioNativeBackend/ via extraResources)
-cd desktop
-npm install
-npm run dist            # instalador NSIS + portable  -> desktop/release/
-# ou apenas portable:
-npm run dist:portable
+python app.py                 # backend em :5050
+cd desktop && npm run dev     # Vite em :5173, com hot reload
 ```
 
-Saída em `desktop/release/` (ex.: `Studio Native Setup x.y.z.exe` e a versão portable). O ícone do app vem de `desktop/build/icon.ico` (gerado a partir do logo da raiz).
+Abra **http://127.0.0.1:5173**. O Vite e a unica situacao em que o front e a API
+ficam em origens diferentes; e para ela que existe a lista `ORIGENS_PERMITIDAS`
+no `app.py`.
 
-> Em produção, o Electron procura o backend em `resources/backend/StudioNativeBackend.exe`; em dev, roda `python app.py`. Defina `STUDIO_PYTHON` para apontar para um interpretador específico em dev, se necessário.
+Para mexer so no backend, `python app.py` sozinho ja serve o ultimo
+`npm run build` em **:5050** — que e exatamente o que roda em producao.
 
-## Atualizações automáticas
+> **Cuidado ao rodar `python app.py` na mao** com o servico ja de pe: os dois
+> disputam a porta 5050. O app detecta e recusa subir, em vez de deixar o
+> Windows entregar a porta para quem chegou depois.
 
-O app instalado verifica novas releases no GitHub (`foffano/studio-native`) usando `electron-updater`. Quando uma release mais recente estiver disponível, a barra lateral mostra o aviso, permite baixar a atualização e reiniciar o app para instalar. Em desenvolvimento (`npm run dev`) o updater fica desativado.
+## Atualizar a instalacao
 
-Para releases funcionarem com atualização automática, publique junto ao instalador NSIS os arquivos gerados por `electron-builder` em `desktop/release/`, especialmente:
+Nao ha mais instalador nem auto-update: o app roda a partir do repositorio.
 
-- `Studio-Native-Setup-x.y.z.exe`
-- `Studio-Native-Setup-x.y.z.exe.blockmap`
-- `latest.yml`
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\atualizar.ps1
+```
+
+Puxa o codigo, refaz as dependencias, reconstroi o front e reinicia a tarefa
+agendada — nessa ordem, e o reinicio so acontece se o build passou. Se voce
+mexeu no codigo localmente e nao quer que ele puxe nada, use `-SemGit`.
 
 ## Como funciona (geração)
 
@@ -385,28 +385,29 @@ Na seção "Opções de estilo" você pode ajustar tamanho da fonte, FPS, o **es
 ## Estrutura do repositório
 
 ```
-app.py                       # backend Flask (sidecar): OpenRouter/ElevenLabs + MoviePy/Pillow/ffmpeg
-                             #   + rotas do TikTok, fila de publicacao e o front no modo navegador
+app.py                       # backend Flask: OpenRouter/ElevenLabs + MoviePy/Pillow/ffmpeg
+                             #   + rotas do TikTok, fila de publicacao e o front construido
 store.py                     # catalogo de producao em SQLite (outputs/publications/accounts)
 captions.py                  # legenda do post + sanitizacao das hashtags (limite de 5)
 tiktok.py                    # Login Kit v2 com PKCE + envio para a caixa de entrada
 secretbox.py                 # cifragem dos tokens em repouso (DPAPI no Windows)
-studio_native_backend.spec   # PyInstaller: backend + fonts + bin/ (ffmpeg) + webui/ (front)
+auth.py                      # senha (scrypt), sessao por cookie e freio de forca bruta
 tools/fetch_ffmpeg.py        # baixa ffmpeg/ffprobe para bin/
-requirements.txt             # deps Python (inclui pyinstaller)
+tools/instalar-servico.ps1   # cria a tarefa agendada que mantem o app de pe
+tools/atualizar.ps1          # git pull + build + reinicio do servico
+requirements.txt             # deps Python
 fonts/Quicksand.ttf          # fonte arredondada empacotada
 bin/                         # ffmpeg.exe/ffprobe.exe (gerado por fetch_ffmpeg.py)
 
-desktop/                     # app Electron + React
-  package.json               #  scripts npm + config electron-builder
+desktop/                     # o front React (o nome sobrou do tempo do Electron)
+  package.json               #  scripts npm (dev, build)
   vite.config.js
   index.html
-  electron/main.cjs          #  processo main: spawn do backend + janela
-  electron/preload.cjs       #  expõe a URL do backend ao React
-  build/icon.ico             #  ícone do app (gerado do logo)
+  dist/                      #  saida do build -- e isto que o Flask serve
   src/                       #  React: App, api.js, components/, lib/history.js
-  src/components/            #   LibraryView, ProducedView, GenerateView, SettingsView,
-                             #   TikTokAccount, PublishToTikTok, CaptionQR, CaptionPage
+  src/components/            #   LibraryView, SourcePanel, FolderTile, ProducedView,
+                             #   GenerateView, SettingsView, AuthGate, TikTokAccount,
+                             #   PublishToTikTok, CaptionQR, CaptionPage
 
 services/                    # servicos proprios (Cloudflare)
   tiktok-auth/               #  Worker que guarda o client_secret e troca tokens
@@ -415,7 +416,7 @@ services/                    # servicos proprios (Cloudflare)
 docs/                        # plano de produto, modo navegador, cadastro no TikTok
 ```
 
-Saídas de build: `dist/StudioNativeBackend/` (PyInstaller) e `desktop/release/` (instalador). Dados em runtime: `%APPDATA%/StudioNative/` (inclui `studio.db`, o catálogo de produção).
+Saída de build: `desktop/dist/`. Dados em runtime: `%APPDATA%/StudioNative/` — `config.json`, `library.json`, `library/`, `outputs/`, `studio.db` (o catálogo de produção) e `backups/`.
 
 ## Documentação
 
@@ -438,5 +439,5 @@ Saídas de build: `dist/StudioNativeBackend/` (PyInstaller) e `desktop/release/`
   Affiliate Creator API permitiria fazer isso pelo app, e exige aprovação separada.
 - **MP4 órfãos.** Arquivos antigos em `outputs/` que nunca entraram no catálogo
   ficam fora das métricas e da publicação.
-- **Gordura no pacote.** O `collect_all` do PyInstaller puxa dependências que o
-  app não usa; boa parte dos 600 MB do instalador vem daí.
+- **MP4 órfãos.** 22 arquivos em `outputs/`, cerca de 65 MB, sem registro no
+  catálogo — invisíveis no app e fora de qualquer métrica.

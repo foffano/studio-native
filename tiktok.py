@@ -28,7 +28,7 @@ registrados no portal do TikTok e na allowlist do Worker.
 
 ## Por que 43117 nao e a porta do backend
 
-O backend sobe numa porta livre sorteada pelo Electron. Fixar ele em 43117
+O backend subia numa porta sorteada quando havia Electron. Fixar em 43117
 significaria o app nao abrir quando qualquer outra coisa estivesse usando a
 porta -- um modo de falha permanente para resolver um problema de trinta
 segundos. O listener daqui vive so durante o login e morre em seguida.

@@ -151,7 +151,7 @@ bloqueado.
 `fazenda.yml`, registro DNS via `cloudflared tunnel route dns`, reinício do
 serviço. **Depois do Access configurado**, não antes.
 
-**Fase E — Aposentar o Electron (~meio dia).** Remover `desktop/electron/`, o
+**Fase E — Aposentar o Electron (~meio dia).** *(Feita na 1.4.)* Remover `desktop/electron/`, o
 `electron-builder`, o `electron-updater` e a ponte do preload. O `api.js` perde
 o caminho da ponte e fica só com a mesma origem. Atalho no menu Iniciar abrindo
 o navegador no endereço.

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { BACKEND, isElectron } from "../api.js";
+import { BACKEND } from "../api.js";
 
 /**
  * Onde o app está sendo servido.
  *
- * Existe porque o endereço não é adivinhável: o Electron pede uma porta ao
- * sistema, e no app instalado não havia como descobrir qual sem um `netstat`.
+ * Existe porque o endereço não é uma coisa só: em casa é `127.0.0.1:5050`, do
+ * celular é o hostname do túnel, e é preciso saber qual mandar para onde.
  *
  * A versão anterior deste cartão empilhava endereço, botão, comando de túnel,
  * aviso de segurança e QR num bloco só — cada peça útil, todas competindo. Aqui
@@ -101,12 +101,6 @@ export default function BrowserAccess() {
           </p>
         </div>
       </details>
-
-      {isElectron && (
-        <p className="card__hint" style={{ marginTop: "var(--space-3)" }}>
-          O QR serve para abrir em outro navegador deste mesmo PC.
-        </p>
-      )}
     </div>
   );
 }

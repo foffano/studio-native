@@ -13,17 +13,17 @@ import QRCode from "qrcode";
  * o dedo e ajustar a seleção, justamente com o TikTok aberto na outra mão. Com a
  * página, há um botão.
  *
- * Isso exige que o celular alcance o app — servido pelo Flask, direto na rede
- * local ou por um túnel. Fora do navegador (Electron carregado de file://) não
- * há origem que o telefone possa abrir, e aí o QR volta a carregar o texto: pior
- * de usar, mas melhor que nada.
+ * Isso exige que o celular alcance o app — na rede local ou por um túnel. Se
+ * por algum motivo não houver origem HTTP (o `index.html` aberto direto do
+ * disco, por exemplo), o QR volta a carregar o texto: pior de usar, mas melhor
+ * que nada.
  */
 export default function CaptionQR({ texto, outputId }) {
   const [img, setImg] = useState("");
   const [aberto, setAberto] = useState(false);
   const [erro, setErro] = useState("");
 
-  // Origem que o celular consegue abrir. Em file:// (Electron) não existe.
+  // Origem que o celular consegue abrir. Em file:// não existe.
   const origem =
     typeof window !== "undefined" &&
     window.location &&

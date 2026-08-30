@@ -7,26 +7,11 @@ import {
   IconPlus,
   IconFolder,
   IconHistory,
-  IconRefresh,
   IconStar,
   IconClock,
   IconTrash,
   IconVideo,
 } from "./Icons.jsx";
-
-function updateButtonLabel(status) {
-  if (status === "available") return "Baixar atualização";
-  if (status === "downloaded") return "Reiniciar e instalar";
-  if (status === "checking") return "Verificando...";
-  if (status === "downloading") return "Baixando...";
-  return "Verificar atualizações";
-}
-
-function updateActionFor(status) {
-  if (status === "available") return "download";
-  if (status === "downloaded") return "install";
-  return "check";
-}
 
 /** Item de navegação com ícone, rótulo e contagem opcional. */
 function Item({ icone, rotulo, rotuloCurto, principal, contagem, ativo, onClick }) {
@@ -71,14 +56,8 @@ export default function Sidebar({
   contagensProduzidos,
   theme,
   onToggleTheme,
-  updateState,
-  onUpdateAction,
 }) {
   const [pastasAbertas, setPastasAbertas] = useState(true);
-  const updatesEnabled = !!onUpdateAction;
-  const updateStatus = updateState?.status || "idle";
-  const updateBusy = updateStatus === "checking" || updateStatus === "downloading";
-  const temNovidade = updateStatus !== "idle" && updateStatus !== "not-available";
 
   const em = (area, secao, pastaId) =>
     destino.area === area &&
@@ -206,29 +185,9 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar__footer">
-        {updatesEnabled && temNovidade && (
-          <div className="update-card">
-            <div className="update-card__title">Atualizações</div>
-            <div className="update-card__msg">{updateState?.message || ""}</div>
-            <button
-              className="update-card__btn"
-              disabled={updateBusy}
-              onClick={() => onUpdateAction(updateActionFor(updateStatus))}
-            >
-              {updateButtonLabel(updateStatus)}
-            </button>
-          </div>
-        )}
-        {updatesEnabled && !temNovidade && (
-          <button
-            className="navitem nav__item--pc"
-            disabled={updateBusy}
-            onClick={() => onUpdateAction("check")}
-          >
-            <span className="navitem__ico" aria-hidden="true"><IconRefresh /></span>
-            <span className="navitem__txt">Verificar atualizações</span>
-          </button>
-        )}
+        {/* Nao ha mais "Verificar atualizacoes": aquilo era o electron-updater,
+            que baixava um .exe novo. Como servico, atualizar e `git pull` e
+            reiniciar -- feito por `tools/atualizar.ps1`, no PC que hospeda. */}
         <button className="navitem" onClick={onToggleTheme}>
           <span className="navitem__ico" aria-hidden="true">
             {theme === "dark" ? <IconSun /> : <IconMoon />}

@@ -79,8 +79,7 @@ UPLOAD_DIR = USER_DATA_DIR / "uploads"
 OUTPUT_DIR = USER_DATA_DIR / "outputs"
 
 # Front construido (Vite). Empacotado como "webui" no bundle; em dev fica em
-# desktop/dist. Serve para o modo navegador -- no Electron o renderer e
-# carregado de file:// e nao passa por aqui.
+# desktop/dist. E por aqui que o app inteiro e servido.
 WEB_DIR = resource_path("webui")
 if not WEB_DIR.exists():
     WEB_DIR = Path(__file__).resolve().parent / "desktop" / "dist"
@@ -276,9 +275,9 @@ app.config.update(
 
 # Origens que podem falar com a API de outro endereco. O `*` que existia aqui
 # era justificado por "o servidor so escuta em 127.0.0.1" -- premissa que morre
-# no instante em que o tunel sobe. Servido pelo proprio Flask, o front usa a
-# mesma origem e nao precisa de CORS nenhum; a lista existe so para o Electron e
-# o Vite em desenvolvimento.
+# no instante em que o tunel sobe. Em producao o front e servido pelo proprio
+# Flask, mesma origem, e nao precisa de CORS nenhum: a lista existe so para o
+# Vite em desenvolvimento, que roda em :5173.
 ORIGENS_PERMITIDAS = {
     "http://127.0.0.1:5173",
     "http://localhost:5173",
@@ -307,7 +306,7 @@ def _add_cors_headers(resp):
 # seria uma das que servem arquivos de video -- que nao parecem sensiveis e sao.
 
 PUBLICAS = {
-    "/api/health",          # o tunel e o Electron checam antes do login
+    "/api/health",          # o tunel checa antes do login
     "/api/auth/status",
     "/api/auth/login",
     "/api/auth/setup",
@@ -2218,15 +2217,16 @@ def api_settings_post():
 
 
 # ---------------------------------------------------------------------------
-# Modo navegador: o proprio Flask serve o front
+# O proprio Flask serve o front
 # ---------------------------------------------------------------------------
-# Existe para o app rodar sem Electron -- e, com um tunel apontando para esta
-# porta, ser aberto do celular.
+# E o unico jeito de abrir o app: pelo navegador, aqui ou atraves do tunel, do
+# celular.
 #
-# O build do Vite usa `base: "./"` (caminhos relativos), porque no Electron ele
-# e carregado de file://. Isso obriga o app a viver numa **unica rota**: em
-# /alguma/coisa os assets seriam procurados em /alguma/assets e nao existiriam.
-# Por isso a pagina de legenda e `/?legenda=<id>`, e nao `/legenda/<id>`.
+# O build do Vite usa `base: "./"` -- caminhos relativos, herdados de quando o
+# front era carregado de file://. Isso obriga o app a viver numa **unica
+# rota**: em /alguma/coisa os assets seriam procurados em /alguma/assets e nao
+# existiriam. Por isso a pagina de legenda e `/?legenda=<id>`, e nao
+# `/legenda/<id>`.
 
 
 @app.route("/")
@@ -2602,7 +2602,7 @@ def _porta_ja_ocupada(host, port):
 
 
 if __name__ == "__main__":
-    # A porta pode vir do Electron (STUDIO_PORT) ou de PORT; default 5050 em dev.
+    # A porta vem de STUDIO_PORT ou de PORT; 5050 e o padrao.
     port = int(os.getenv("STUDIO_PORT") or os.getenv("PORT") or "5050")
     host = os.getenv("STUDIO_HOST", "127.0.0.1")
 

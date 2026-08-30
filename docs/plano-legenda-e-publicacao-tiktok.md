@@ -6,7 +6,7 @@ produzidos/publicados e publicação no TikTok (inclusive o carrinho laranja).
 
 ## 1. O app hoje
 
-Electron abre a janela, o React fala HTTP com o backend Flask (sidecar PyInstaller),
+O Flask serve o React e a API na mesma origem,
 e o Flask renderiza localmente com MoviePy + Pillow + ffmpeg.
 
 Caminho de um vídeo: upload (ou item da Biblioteca) -> `normalize_video()` ->
@@ -118,7 +118,7 @@ Quatro coisas saíram diferentes do que estava escrito aqui, e o motivo importa:
 não abrir quando qualquer outro programa estivesse usando a porta — um modo de
 falha permanente para resolver um problema de trinta segundos. Em vez disso,
 `tiktok.py` sobe um listener descartável em 43117 só durante o login. O backend
-continua na porta sorteada pelo Electron.
+continua na 5050.
 
 **Escopos: só `user.info.basic` e `video.upload`.** O `video.publish` que estava
 listado aqui é publicação direta no perfil — não é o caminho escolhido (o

@@ -1,35 +1,24 @@
-// Resolve onde esta o backend Python. Sao tres situacoes, e a ordem importa:
+// Onde esta o backend. Sao duas situacoes:
 //
-// 1. **Electron**: a URL chega pelo preload, porque o backend sobe numa porta
-//    sorteada e o renderer e carregado de file://.
-// 2. **Vite dev no navegador**: nao ha ponte, e o front esta em :5173 enquanto
-//    o backend esta em :5050. Precisa da URL absoluta.
-// 3. **Servido pelo proprio Flask** (modo navegador, inclusive atraves de um
-//    tunel): usa a **mesma origem**, string vazia. Isto e o que faz o app
-//    funcionar no celular -- uma URL absoluta com 127.0.0.1 faria o telefone
-//    tentar conectar nele mesmo.
-const bridgeUrl =
-  typeof window !== "undefined" &&
-  window.studioNative &&
-  window.studioNative.backendUrl;
-
+// 1. **Vite em desenvolvimento**: o front esta em :5173 e o backend em :5050.
+//    Origens diferentes, entao precisa da URL absoluta.
+// 2. **Servido pelo proprio Flask** (producao, inclusive atraves do tunel):
+//    **mesma origem**, string vazia. E isto que faz o app funcionar no celular
+//    -- uma URL absoluta com 127.0.0.1 faria o telefone tentar conectar nele
+//    mesmo.
 const emDev =
   typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV;
 
-export const BACKEND = bridgeUrl || (emDev ? "http://127.0.0.1:5050" : "");
-
-export const isElectron =
-  typeof window !== "undefined" &&
-  !!(window.studioNative && window.studioNative.isElectron);
+export const BACKEND = emDev ? "http://127.0.0.1:5050" : "";
 
 export const apiUrl = (p) => `${BACKEND}${p}`;
 
 /** `fetch` com cookie de sessao.
  *
- * `credentials` só vale "same-origin" por padrão. Servido pelo Flask isso
- * bastaria, mas no Electron o front fala com `http://127.0.0.1:<porta>` — outra
- * origem — e o cookie de sessão simplesmente não seria enviado: todo pedido
- * voltaria 401 sem explicação. */
+ * `credentials` só vale "same-origin" por padrão. Em produção o Flask serve o
+ * front, então bastaria; no Vite de desenvolvimento o front está em :5173 e a
+ * API em :5050 — outra origem — e o cookie de sessão não seria enviado: todo
+ * pedido voltaria 401 sem explicação. */
 const req = (url, opts = {}) => fetch(url, { credentials: "include", ...opts });
 export const outputUrl = (file) => `${BACKEND}/outputs/${file}`;
 
@@ -205,7 +194,7 @@ export async function disconnectTikTok() {
 
 /** Leva o usuário à tela de autorização do TikTok.
  *
- * No Electron, abre no navegador do sistema — dentro de uma janela nossa
+ * Antes, no Electron, isto abria o navegador do sistema — dentro de uma janela nossa
  * teríamos acesso ao cookie de sessão do TikTok, e ele recusa isso.
  *
  * No navegador, navega **na própria aba** em vez de abrir outra. Abrir aba nova
@@ -215,12 +204,6 @@ export async function disconnectTikTok() {
  * devolve para o app, e a página de retorno traz de volta.
  */
 export async function openAuthorizeUrl(url) {
-  const bridge = typeof window !== "undefined" && window.studioNative;
-  if (bridge && bridge.openExternal) {
-    const r = await bridge.openExternal(url);
-    if (!r || !r.ok) throw new Error((r && r.error) || "Nao foi possivel abrir o navegador");
-    return;
-  }
   window.location.assign(url);
 }
 

@@ -10,7 +10,7 @@ import { getOutput } from "../api.js";
  * outra mão. Aqui existe um botão.
  *
  * Vive em `/?legenda=<id>` e não em `/legenda/<id>` porque o build usa caminhos
- * relativos (exigência do Electron): numa rota aninhada, os assets não
+ * relativos, herdados do tempo do Electron: numa rota aninhada, os assets não
  * carregariam.
  */
 export default function CaptionPage({ outputId }) {

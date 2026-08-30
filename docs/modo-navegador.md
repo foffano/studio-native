@@ -1,20 +1,20 @@
-# Modo navegador e acesso pelo celular
+# Acesso pelo navegador e pelo celular
 
-O Studio Native roda de duas formas com o mesmo código:
+> **Histórico:** até a 1.3 havia dois modos — o `.exe` do Electron e o
+> navegador. Na 1.4 o Electron foi aposentado e sobrou um só. O nome deste
+> arquivo ficou.
 
-- **Electron** (o `.exe` do release): janela nativa, backend numa porta sorteada.
-- **Navegador**: o próprio Flask serve o front, e você abre no Chrome — ou, com
-  um túnel, no celular.
-
-O segundo modo existe para uma coisa concreta: terminar a publicação onde ela
-termina de verdade, que é no telefone.
+O Studio Native é um serviço que roda no seu PC e se usa pelo navegador — ali
+mesmo ou, com um túnel, do celular. Essa segunda parte existe para uma coisa
+concreta: terminar a publicação onde ela termina de verdade, que é no telefone.
 
 ## Rodar
 
-### Se você usa o app instalado
+### Com o serviço instalado
 
-Basta deixá-lo aberto: o backend dele já serve o navegador. O endereço aparece
-em **Ajustes → Abrir no navegador**, com botão de copiar e um QR.
+Ele já está de pé (`tools/instalar-servico.ps1` cria a tarefa agendada). O
+endereço aparece em **Ajustes → Abrir no navegador**, com botão de copiar e um
+QR.
 
 O app tenta a porta **5050** e só sorteia outra se ela estiver ocupada — por
 isso o endereço costuma ser sempre `http://127.0.0.1:5050`, mas confira no
@@ -161,7 +161,7 @@ solto, e copiar exigia segurar o dedo e ajustar a seleção — justamente com o
 TikTok aberto na outra mão.
 
 O QR só aponta para a página quando o app está sendo servido por HTTP; no
-Electron (`file://`) não há origem que o telefone possa abrir, e ele volta a
+`file://` não há origem que o telefone possa abrir, e ele volta a
 carregar o texto.
 
 **Uma limitação de plataforma:** `navigator.clipboard` só existe em contexto
@@ -170,7 +170,7 @@ local, não. A página detecta e manda selecionar o texto à mão.
 
 ## Por que `/?legenda=` e não `/legenda/`
 
-O build usa `base: "./"` — caminhos relativos, exigência do Electron, que carrega
+O build usa `base: "./"` — caminhos relativos herdados do Electron, que carregava
 o `index.html` de `file://`. Numa rota aninhada, o navegador procuraria os assets
 em `/legenda/assets/...`, que não existe. Com query string o app vive numa rota
 só e os dois modos usam o mesmo build.

@@ -56,7 +56,6 @@ export default function App() {
   const [activeEntry, setActiveEntry] = useState(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [libraryPick, setLibraryPick] = useState(null);
-  const [updateState, setUpdateState] = useState(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -96,32 +95,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const updates = window.studioNative?.updates;
-    if (!updates) return undefined;
-    updates.getState().then(setUpdateState).catch(() => {});
-    const unsubscribe = updates.onState(setUpdateState);
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
     if (activeChatId) setActiveEntry(getEntry(activeChatId));
     else setActiveEntry(null);
   }, [activeChatId, historyVersion]);
 
-  const updateAction = async (action) => {
-    const updates = window.studioNative?.updates;
-    if (!updates) return;
-    try {
-      if (action === "check") setUpdateState(await updates.check());
-      if (action === "download") setUpdateState(await updates.download());
-      if (action === "install") await updates.install();
-    } catch (e) {
-      setUpdateState({
-        status: "error",
-        message: e.message || "Falha ao processar atualizacao.",
-      });
-    }
-  };
 
   const handleGenerationStarted = (jobId, entry) => {
     setActiveChatId(jobId);
@@ -195,8 +172,6 @@ export default function App() {
         contagensProduzidos={navDados.metrics}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-        updateState={updateState}
-        onUpdateAction={updateAction}
       />
 
       <main className="content">
