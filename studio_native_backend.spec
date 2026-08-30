@@ -53,7 +53,12 @@ a = Analysis(
     pathex=[],
     binaries=binaries,
     datas=datas,
-    hiddenimports=hiddenimports + ["dotenv"],
+    # `waitress` e importado dentro de um try/except no bloco __main__, e a
+    # analise estatica do PyInstaller nao segue esse caminho. Sem declarar aqui,
+    # o executavel cai no servidor de desenvolvimento do Flask -- que funciona,
+    # mas com o aviso de "nao exponha isto a internet" num app que agora atende
+    # pela internet.
+    hiddenimports=hiddenimports + ["dotenv", "waitress"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
