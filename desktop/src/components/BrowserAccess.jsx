@@ -78,7 +78,7 @@ export default function BrowserAccess() {
               border: "1px solid #1e2a3d",
               borderRadius: 8,
               padding: "10px 12px",
-              fontSize: 15,
+              fontSize: "var(--text-md)",
               wordBreak: "break-all",
               marginBottom: 8,
             }}
@@ -101,7 +101,7 @@ export default function BrowserAccess() {
               border: "1px solid #1e2a3d",
               borderRadius: 8,
               padding: "8px 10px",
-              fontSize: 13,
+              fontSize: "var(--text-sm)",
               marginTop: 6,
               wordBreak: "break-all",
             }}
@@ -127,7 +127,7 @@ export default function BrowserAccess() {
               height={190}
               style={{ background: "#fff", borderRadius: 8, display: "block" }}
             />
-            <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
+            <p className="muted" style={{ fontSize: "var(--text-xs)", margin: "6px 0 0" }}>
               {isElectron ? "para outro navegador deste PC" : "aponte a câmera"}
             </p>
           </div>

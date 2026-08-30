@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getOutputs, outputUrl, refreshPublications } from "../api.js";
+import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
 
 /**
@@ -163,13 +164,13 @@ function CartaoProduzido({ output }) {
           Arquivo removido do disco. O registro continua no catálogo.
         </div>
       ) : (
-        <video src={url} controls preload="metadata" onError={() => setQuebrado(true)} />
+        <LazyVideo src={url} controls onError={() => setQuebrado(true)} />
       )}
       <div className="rcard__body">
         <p className="rcard__phrase">{output.phrase || "(sem frase)"}</p>
 
         {output.caption && (
-          <p className="muted" style={{ fontSize: 13, margin: "0 0 6px" }}>
+          <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "0 0 6px" }}>
             {output.caption}
           </p>
         )}

@@ -62,7 +62,7 @@ export default function CaptionQR({ texto, outputId }) {
   return (
     <div style={{ marginTop: 8 }}>
       {erro ? (
-        <p style={{ color: "#f87171", fontSize: 13 }}>
+        <p style={{ color: "#f87171", fontSize: "var(--text-sm)" }}>
           Não foi possível gerar o QR: {erro}
         </p>
       ) : img ? (
@@ -76,14 +76,14 @@ export default function CaptionQR({ texto, outputId }) {
             height={260}
             style={{ background: "#fff", borderRadius: 8, display: "block" }}
           />
-          <p className="muted" style={{ fontSize: 13, margin: "6px 0 0" }}>
+          <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "6px 0 0" }}>
             {origem && outputId
               ? "Aponte a câmera do celular. Abre uma página com botão de copiar."
               : "Aponte a câmera do celular. O texto aparece na tela — toque e segure para copiar."}
           </p>
         </>
       ) : (
-        <p className="muted" style={{ fontSize: 13 }}>Gerando...</p>
+        <p className="muted" style={{ fontSize: "var(--text-sm)" }}>Gerando...</p>
       )}
       <button
         className="btn btn--ghost btn--xs"

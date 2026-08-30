@@ -167,7 +167,7 @@ export default function TikTokAccount() {
               <div style={{ fontWeight: 600 }}>
                 {account.nickname || "conta conectada"}
               </div>
-              <div className="muted" style={{ fontSize: 13 }}>
+              <div className="muted" style={{ fontSize: "var(--text-sm)" }}>
                 {(account.scopes || "").split(",").filter(Boolean).join(" · ") ||
                   "sem escopos declarados"}
               </div>

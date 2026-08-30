@@ -6,6 +6,7 @@ import {
   deleteLibraryItem,
   libraryVideoUrl,
 } from "../api.js";
+import LazyVideo from "./LazyVideo.jsx";
 import { IconUpload, IconTrash, IconVideo, IconPlus } from "./Icons.jsx";
 
 function fmtDur(sec) {
@@ -185,7 +186,7 @@ export default function LibraryView({ onUseForGeneration }) {
           <div className="drop__title">
             {busy ? "Enviando e pré-processando..." : "Solte vídeos aqui"}
           </div>
-          <div style={{ fontSize: 12 }}>ou clique para escolher (vários de uma vez)</div>
+          <div style={{ fontSize: "var(--text-xs)" }}>ou clique para escolher (vários de uma vez)</div>
           <input
             type="file"
             accept="video/*"
@@ -241,7 +242,7 @@ function LibraryCard({
     <div className={"lib-card" + (pending ? " lib-card--busy" : "")}>
       <div className="lib-card__media">
         {url ? (
-          <video src={url} muted preload="metadata" />
+          <LazyVideo src={url} />
         ) : (
           <div className="lib-card__placeholder">
             {pending ? <span className="spinner" /> : <IconVideo width={28} height={28} />}

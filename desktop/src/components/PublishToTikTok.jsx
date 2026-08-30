@@ -105,7 +105,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
 
   if (!conta) {
     return (
-      <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+      <p className="muted" style={{ fontSize: "var(--text-sm)", marginTop: 8 }}>
         Conecte a conta do TikTok em Ajustes para enviar seus vídeos.
       </p>
     );
@@ -120,7 +120,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
       {/* A legenda não vai junto, e não é limitação nossa: o endpoint de caixa
           de entrada aceita só `source_info`. Campo de título existe apenas no
           Direct Post, que publica direto no feed. */}
-      <p className="muted" style={{ fontSize: 13, margin: "0 0 6px" }}>
+      <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "0 0 6px" }}>
         A legenda não pode ser enviada junto — o TikTok não aceita texto neste
         caminho. Cole ao terminar o post:
       </p>
@@ -131,7 +131,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
           border: "1px solid #1e2a3d",
           borderRadius: 8,
           padding: "8px 10px",
-          fontSize: 13,
+          fontSize: "var(--text-sm)",
           margin: "0 0 6px",
           fontFamily: "inherit",
         }}
@@ -154,7 +154,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
         <p style={{ color: "#facc15", margin: "0 0 4px" }}>
           Esperando você no TikTok de @{conta.nickname}
         </p>
-        <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>
+        <p className="muted" style={{ fontSize: "var(--text-sm)", margin: "0 0 8px" }}>
           Abra o TikTok no celular, vá na aba <strong>Caixa de entrada</strong> e
           toque na notificação do vídeo para revisar, adicionar o produto e
           publicar. Ele não aparece em Rascunhos — esses são só do aparelho.
@@ -188,7 +188,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
           </button>
         </div>
         {erro && (
-          <p style={{ color: "#f87171", fontSize: 13, marginTop: 6 }}>{erro}</p>
+          <p style={{ color: "#f87171", fontSize: "var(--text-sm)", marginTop: 6 }}>{erro}</p>
         )}
         {blocoLegenda}
       </div>
@@ -226,7 +226,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
         {estado === "erro" ? "Tentar de novo" : `Enviar para o TikTok de @${conta.nickname}`}
       </button>
       {(erro || pub?.error) && (
-        <p style={{ color: "#f87171", fontSize: 13, marginTop: 6 }}>
+        <p style={{ color: "#f87171", fontSize: "var(--text-sm)", marginTop: 6 }}>
           {erro || pub.error}
         </p>
       )}
