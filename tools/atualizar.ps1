@@ -39,7 +39,17 @@ if (-not $SemGit) {
         Write-Host $sujo
         throw 'Commite ou descarte antes de atualizar (ou use -SemGit).'
     }
+
+    # Sem upstream, `git pull --ff-only` falha com "no tracking information",
+    # que nao diz o que fazer. Melhor dizer.
+    git rev-parse --abbrev-ref '@{upstream}' 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $ramo = git rev-parse --abbrev-ref HEAD
+        throw "O ramo '$ramo' nao acompanha nenhum remoto. Rode uma vez: git push -u origin $ramo (ou use -SemGit para so reconstruir)."
+    }
+
     git pull --ff-only
+    if ($LASTEXITCODE -ne 0) { throw 'git pull falhou.' }
 }
 
 # --- 2. Dependencias -------------------------------------------------------
