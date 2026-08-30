@@ -19,7 +19,7 @@ const FILTROS = [
   { id: "pendentes", rotulo: "Não enviados" },
 ];
 
-export default function ProducedView({ secao = "todos" }) {
+export default function ProducedView({ secao = "todos", folderId = null }) {
   const [itens, setItens] = useState([]);
   const [metricas, setMetricas] = useState(null);
   // O filtro vem da barra lateral, mas continua ajustavel aqui: a barra escolhe
@@ -34,7 +34,11 @@ export default function ProducedView({ secao = "todos" }) {
   const [erro, setErro] = useState("");
 
   const buscar = async () => {
-    const r = await getOutputs({ limit: 200 });
+    // `folderId` vazio e um filtro legitimo ("sem pasta"), entao o teste e
+    // contra null -- nao contra falsidade.
+    const r = await getOutputs(
+      folderId !== null ? { limit: 200, folder_id: folderId } : { limit: 200 }
+    );
     setItens(r.items || []);
     setMetricas(r.metrics || null);
     setErro("");
@@ -63,7 +67,7 @@ export default function ProducedView({ secao = "todos" }) {
 
   useEffect(() => {
     carregar();
-  }, []);
+  }, [folderId]);
 
   const visiveis = useMemo(() => {
     const termo = busca.trim().toLowerCase();

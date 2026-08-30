@@ -218,9 +218,16 @@ def get_output_by_file(file):
     return _decode_output(_one("SELECT * FROM outputs WHERE file = ?", (file,)))
 
 
-def list_outputs(status=None, library_id=None, job_id=None, search=None, limit=200, offset=0):
+def list_outputs(status=None, library_id=None, job_id=None, search=None,
+                 folder_id=None, limit=200, offset=0):
     sql = "SELECT * FROM outputs WHERE 1=1"
     params = []
+    # `folder_id=""` e um filtro legitimo -- "sem pasta" e uma secao de verdade,
+    # e nao ausencia de filtro. Por isso o teste e contra None, nao contra
+    # falsidade: `if folder_id:` deixaria a secao "sem pasta" listar tudo.
+    if folder_id is not None:
+        sql += " AND folder_id = ?"
+        params.append(folder_id)
     if status:
         sql += " AND status = ?"
         params.append(status)

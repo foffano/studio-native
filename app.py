@@ -1806,6 +1806,8 @@ def api_outputs_list():
         library_id=request.args.get("library_id") or None,
         job_id=request.args.get("job_id") or None,
         search=request.args.get("q") or None,
+        # `folder_id` ausente = sem filtro; presente e vazio = "sem pasta".
+        folder_id=request.args.get("folder_id"),
         limit=int(request.args.get("limit", 200)),
         offset=int(request.args.get("offset", 0)),
     )
@@ -1833,6 +1835,11 @@ def api_output_patch(output_id):
         fields["hashtags"] = cap.normalize_hashtags(data.get("hashtags"))
     if "status" in data:
         fields["status"] = str(data.get("status") or "pronto")
+    if "folder_id" in data:
+        fid = str(data.get("folder_id") or "")
+        # Pasta inexistente vira "sem pasta", mesmo destino de quem estava numa
+        # pasta apagada. Recusar seria pior: o video ficaria preso a um id morto.
+        fields["folder_id"] = fid if (not fid or store.get_folder(fid)) else ""
     return jsonify(store.update_output(output_id, **fields))
 
 

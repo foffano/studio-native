@@ -2084,3 +2084,43 @@ input[type="range"] {
   color: #f87171;
   border-color: #f87171;
 }
+
+/* Abas da pasta. */
+.abas {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+.abas__lista {
+  display: flex;
+  gap: var(--space-1);
+}
+.aba {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: none;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  /* A borda existe sempre, transparente quando inativa: sem isso o texto pula
+     1px ao trocar de aba. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.aba:hover {
+  color: var(--text);
+}
+.aba--on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.abas__acoes {
+  display: flex;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}

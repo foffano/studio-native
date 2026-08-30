@@ -119,8 +119,13 @@ export async function getOutput(id) {
 }
 
 export async function getOutputs(params = {}) {
+  // `folder_id=""` significa "sem pasta" e precisa chegar ao backend; os outros
+  // parâmetros vazios continuam sendo descartados, senão virariam filtros que
+  // ninguém pediu.
   const qs = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => v !== "" && v != null)
+    Object.entries(params).filter(
+      ([k, v]) => v != null && (v !== "" || k === "folder_id")
+    )
   ).toString();
   const res = await req(apiUrl(`/api/outputs${qs ? `?${qs}` : ""}`));
   return jsonOrThrow(res);

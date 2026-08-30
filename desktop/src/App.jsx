@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import GenerateView from "./components/GenerateView.jsx";
+import FolderView from "./components/FolderView.jsx";
 import ProducedView from "./components/ProducedView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
@@ -217,14 +218,23 @@ export default function App() {
 
         {destino.area === "produzidos" && <ProducedView secao={destino.secao} />}
 
-        {(destino.area === "biblioteca" || destino.area === "pasta") && (
+        {destino.area === "biblioteca" && (
           <LibraryView
-            secao={destino.area === "pasta" ? null : destino.secao}
-            pastaId={destino.area === "pasta" ? destino.pastaId : null}
+            secao={destino.secao}
             pastas={navDados.pastas}
             importarPedido={importarPedido}
             onMudou={recarregarNav}
             onUseForGeneration={handleUseLibrary}
+          />
+        )}
+
+        {destino.area === "pasta" && (
+          <FolderView
+            pasta={pastaAtual}
+            pastas={navDados.pastas}
+            onMudou={recarregarNav}
+            onUseForGeneration={handleUseLibrary}
+            onSair={() => setDestino({ area: "biblioteca", secao: "todos" })}
           />
         )}
 
