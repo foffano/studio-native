@@ -44,7 +44,14 @@ async function jsonOrThrow(res) {
     // Sessão caiu (expirou, serviço reiniciado, logout em outra aba). Avisamos
     // o app inteiro de uma vez: sem isto, cada tela mostraria seu próprio erro
     // críptico e nenhuma levaria de volta ao login.
-    if (res.status === 401 && typeof window !== "undefined") {
+    //
+    // Mas só quando o backend diz que é falta de sessão. Nem todo 401 significa
+    // isso: errar a senha atual no formulário de troca também responde 401, e
+    // antes disso derrubava o usuário para a tela de login — punindo um erro de
+    // digitação com a perda da sessão inteira.
+    const semSessao =
+      data && (data.error === "nao_autenticado" || data.error === "sem_senha");
+    if (res.status === 401 && semSessao && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("studio:sem-sessao"));
     }
     const msg = (data && data.error) || `Erro ${res.status}`;

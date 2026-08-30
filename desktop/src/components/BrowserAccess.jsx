@@ -3,22 +3,20 @@ import QRCode from "qrcode";
 import { BACKEND, isElectron } from "../api.js";
 
 /**
- * Mostra em que endereço o app está sendo servido, para abrir no navegador ou
- * no celular.
+ * Onde o app está sendo servido.
  *
  * Existe porque o endereço não é adivinhável: o Electron pede uma porta ao
- * sistema, e no app instalado o usuário não tem como descobrir qual foi sem
- * abrir um `netstat`. O modo navegador ficava inacessível para quem usa o app
- * instalado — que é a maioria.
+ * sistema, e no app instalado não havia como descobrir qual sem um `netstat`.
  *
- * O QR é gerado localmente, como data URL. Nada sai da máquina.
+ * A versão anterior deste cartão empilhava endereço, botão, comando de túnel,
+ * aviso de segurança e QR num bloco só — cada peça útil, todas competindo. Aqui
+ * fica o que se usa sempre (endereço e QR); o que se faz uma vez a cada muitos
+ * meses desce para uma seção que abre quando pedida.
  */
 export default function BrowserAccess() {
   const [qr, setQr] = useState("");
   const [copiado, setCopiado] = useState(false);
 
-  // No Electron a URL vem da ponte do preload. Servido pelo Flask, o endereço
-  // é a própria origem da página.
   const url =
     BACKEND ||
     (typeof window !== "undefined" && window.location.protocol.startsWith("http")
@@ -31,7 +29,7 @@ export default function BrowserAccess() {
     QRCode.toDataURL(url, {
       errorCorrectionLevel: "L",
       margin: 2,
-      width: 190,
+      width: 150,
       color: { dark: "#0e1726", light: "#ffffff" },
     })
       .then((d) => vivo && setQr(d))
@@ -49,90 +47,66 @@ export default function BrowserAccess() {
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch (_) {
-      /* sem área de transferência: o endereço está visível para copiar à mão */
+      /* o endereço está visível para copiar à mão */
     }
   }
 
   return (
     <div className="card">
-      <h3 className="card__title">Abrir no navegador</h3>
-      <p className="card__hint">
-        O mesmo app roda no navegador, neste endereço. Enquanto o Studio Native
-        estiver aberto, ele responde.
-      </p>
+      <h3 className="card__title">Endereço deste app</h3>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 18,
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          marginTop: 12,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <code
-            style={{
-              display: "block",
-              background: "#0f1826",
-              border: "1px solid #1e2a3d",
-              borderRadius: 8,
-              padding: "10px 12px",
-              fontSize: "var(--text-md)",
-              wordBreak: "break-all",
-              marginBottom: 8,
-            }}
-          >
-            {url}
-          </code>
+      <div className="acesso">
+        <div className="acesso__principal">
+          <code className="acesso__url">{url}</code>
           <button className="btn btn--ghost btn--xs" onClick={copiar}>
             {copiado ? "Copiado" : "Copiar endereço"}
           </button>
-
-          <p className="card__hint" style={{ marginTop: 14, marginBottom: 0 }}>
-            Para abrir <strong>pelo celular</strong>, este endereço não basta —
-            ele só existe dentro deste computador. Suba um túnel e use a URL que
-            ele devolver:
-          </p>
-          <code
-            style={{
-              display: "block",
-              background: "#0f1826",
-              border: "1px solid #1e2a3d",
-              borderRadius: 8,
-              padding: "8px 10px",
-              fontSize: "var(--text-sm)",
-              marginTop: 6,
-              wordBreak: "break-all",
-            }}
-          >
-            cloudflared tunnel --url {url}
-          </code>
-          {/* O mesmo alerta do README e da doc: exposto por tunel, sem
-              autenticacao, quem tiver a URL tem o app inteiro. */}
-          <p className="card__hint" style={{ marginTop: 8, marginBottom: 0 }}>
-            ⚠️ O app não pede senha. Atrás de um túnel, quem tiver a URL pode
-            gerar vídeos com seus créditos e publicar na sua conta — proteja com
-            Cloudflare Access, ou derrube o túnel ao terminar.
+          <p className="card__hint acesso__nota">
+            Vale enquanto o Studio Native estiver rodando. Só existe dentro deste
+            computador.
           </p>
         </div>
 
         {qr && (
-          <div style={{ textAlign: "center" }}>
-            {/* Fundo branco fixo: no tema escuro a câmera não lê o código. */}
-            <img
-              src={qr}
-              alt="QR code com o endereço do app"
-              width={190}
-              height={190}
-              style={{ background: "#fff", borderRadius: 8, display: "block" }}
-            />
-            <p className="muted" style={{ fontSize: "var(--text-xs)", margin: "6px 0 0" }}>
-              {isElectron ? "para outro navegador deste PC" : "aponte a câmera"}
-            </p>
-          </div>
+          <img
+            className="acesso__qr"
+            src={qr}
+            alt="QR code com o endereço do app"
+            width={150}
+            height={150}
+          />
         )}
       </div>
+
+      {/* Configurar um túnel é coisa de uma vez; não precisa estar aberto todo
+          dia ocupando a tela. O aviso de segurança mora aqui dentro de
+          propósito: ele importa exatamente no momento em que alguém vem ler
+          como expor o app. */}
+      <details className="revelar">
+        <summary className="revelar__titulo">
+          Usar de fora deste computador
+        </summary>
+        <div className="revelar__corpo">
+          <p className="card__hint">
+            O endereço acima não alcança o celular — ele só existe aqui. Suba um
+            túnel e use a URL que ele devolver:
+          </p>
+          <code className="acesso__url">cloudflared tunnel --url {url}</code>
+          <p className="card__hint" style={{ marginTop: "var(--space-3)" }}>
+            <strong>Antes de deixar um túnel de pé:</strong> o app pede senha,
+            mas o endereço público aparece nos registros de Certificate
+            Transparency minutos depois de criado, e bots os varrem. Proteger o
+            hostname com Cloudflare Access barra o tráfego antes de ele chegar
+            nesta máquina.
+          </p>
+        </div>
+      </details>
+
+      {isElectron && (
+        <p className="card__hint" style={{ marginTop: "var(--space-3)" }}>
+          O QR serve para abrir em outro navegador deste mesmo PC.
+        </p>
+      )}
     </div>
   );
 }

@@ -2124,3 +2124,103 @@ input[type="range"] {
   gap: var(--space-2);
   padding-bottom: var(--space-2);
 }
+
+/* Cartão de acesso: endereço e QR lado a lado. */
+.acesso {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+.acesso__principal {
+  flex: 1;
+  min-width: 240px;
+}
+.acesso__url {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  word-break: break-all;
+  margin-bottom: var(--space-2);
+}
+.acesso__nota {
+  margin-top: var(--space-3);
+  margin-bottom: 0;
+  /* Texto de apoio não atravessa a tela: 65–75 caracteres é o limite legível. */
+  max-width: var(--measure);
+}
+.acesso__qr {
+  /* Fundo branco fixo: no tema escuro a câmera não lê o código. */
+  background: #fff;
+  border-radius: 8px;
+  display: block;
+}
+
+/* Seção que abre quando pedida. */
+.revelar {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.revelar__titulo {
+  cursor: pointer;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  /* O marcador padrão do <details> some em alguns navegadores; a seta abaixo é
+     desenhada e gira, então o nativo sai. */
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+}
+.revelar__titulo::-webkit-details-marker {
+  display: none;
+}
+.revelar__titulo::before {
+  content: "›";
+  display: inline-block;
+  transition: transform 0.15s;
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+.revelar[open] .revelar__titulo::before {
+  transform: rotate(90deg);
+}
+.revelar__titulo:hover {
+  color: var(--text);
+}
+.revelar__corpo {
+  padding-top: var(--space-3);
+  max-width: var(--measure);
+}
+
+/* Formulário de senha. */
+.form-senha {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 26rem;
+  margin-top: var(--space-3);
+}
+.form-senha .input {
+  /* 16px impede o iOS de dar zoom ao focar. */
+  font-size: var(--text-md);
+}
+.form-senha__acoes {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.form-senha__ok {
+  color: #4ade80;
+  font-size: var(--text-sm);
+}
+.form-senha__erro {
+  color: #f87171;
+  font-size: var(--text-sm);
+}
