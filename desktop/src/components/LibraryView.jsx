@@ -321,13 +321,18 @@ export default function LibraryView({
           </div>
         )}
 
+        {/* No celular o rótulo encolhe para "Adicionar" -- e não some. Um
+            botão só de ícone precisaria de `aria-label` e ainda assim exigiria
+            adivinhar o que o "+" faz. Trocar de palavra custa nada. */}
         <button
           type="button"
           className="btn btn--primary toolbar__add"
           onClick={() => setUploadAberto((v) => !v)}
           aria-expanded={uploadAberto || items.length === 0}
         >
-          <IconPlus width={16} height={16} /> Adicionar vídeos
+          <IconPlus width={16} height={16} />
+          <span className="toolbar__add-longo">Adicionar vídeos</span>
+          <span className="toolbar__add-curto">Adicionar</span>
         </button>
       </div>
 

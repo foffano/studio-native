@@ -12,7 +12,6 @@ import {
   resumeRunningGenerations,
 } from "./lib/generationManager.js";
 
-const THEME_KEY = "studio_native_theme";
 const MIGRATED_KEY = "studio_native_history_migrated_v1";
 
 /** Manda para o backend o histórico que vivia só no localStorage.
@@ -48,19 +47,11 @@ export default function App() {
   // deixaria os dois lados discordando por alguns segundos.
   const [navDados, setNavDados] = useState({ contagens: {}, pastas: [], metrics: {} });
   const [importarPedido, setImportarPedido] = useState(0);
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem(THEME_KEY) || "light"
-  );
   const [config, setConfig] = useState(null);
   const [activeChatId, setActiveChatId] = useState(null);
   const [activeEntry, setActiveEntry] = useState(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [libraryPick, setLibraryPick] = useState(null);
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
 
   const recarregarNav = async () => {
     try {
@@ -170,14 +161,40 @@ export default function App() {
         contagens={navDados.contagens}
         pastas={navDados.pastas}
         contagensProduzidos={navDados.metrics}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
       />
 
       <main className="content">
         <div className="content__head">
           <h1 className="title">{titulo}</h1>
         </div>
+
+        {/* Só no celular, onde a barra lateral virou rodapé e coube apenas o
+            essencial. Favoritos, Recentes e Lixeira ficavam **inalcançáveis**
+            no telefone: sumiam da barra e não tinham outro caminho.
+
+            Fichas, e não mais itens no rodapé: seções não são destinos, são
+            recortes da mesma biblioteca. O rodapé fica com os três lugares
+            para onde se vai de verdade — biblioteca, pendências, ajustes — e
+            a diretriz de no máximo cinco continua respeitada com folga. */}
+        {destino.area === "biblioteca" && (
+          <nav className="secoes" aria-label="Seções da biblioteca">
+            {[
+              ["todos", "Todos"],
+              ["favoritos", "Favoritos"],
+              ["recentes", "Recentes"],
+              ["lixeira", "Lixeira"],
+            ].map(([id, rotulo]) => (
+              <button
+                key={id}
+                className={"secoes__ficha" + (destino.secao === id ? " secoes__ficha--on" : "")}
+                aria-current={destino.secao === id ? "page" : undefined}
+                onClick={() => setDestino({ area: "biblioteca", secao: id })}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </nav>
+        )}
 
         {destino.area === "gerar" && (
           <GenerateView

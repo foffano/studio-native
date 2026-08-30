@@ -2,8 +2,6 @@ import React, { useState } from "react";
 import logoUrl from "../assets/logo.png";
 import {
   IconSettings,
-  IconSun,
-  IconMoon,
   IconPlus,
   IconFolder,
   IconHistory,
@@ -54,8 +52,6 @@ export default function Sidebar({
   contagens,
   pastas,
   contagensProduzidos,
-  theme,
-  onToggleTheme,
 }) {
   const [pastasAbertas, setPastasAbertas] = useState(true);
 
@@ -188,14 +184,6 @@ export default function Sidebar({
         {/* Nao ha mais "Verificar atualizacoes": aquilo era o electron-updater,
             que baixava um .exe novo. Como servico, atualizar e `git pull` e
             reiniciar -- feito por `tools/atualizar.ps1`, no PC que hospeda. */}
-        <button className="navitem" onClick={onToggleTheme}>
-          <span className="navitem__ico" aria-hidden="true">
-            {theme === "dark" ? <IconSun /> : <IconMoon />}
-          </span>
-          <span className="navitem__txt">
-            {theme === "dark" ? "Tema claro" : "Tema escuro"}
-          </span>
-        </button>
         <button
           className={"navitem" + (destino.area === "ajustes" ? " navitem--on" : "")}
           onClick={() => onNavegar({ area: "ajustes" })}

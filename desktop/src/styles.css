@@ -1,4 +1,9 @@
 :root {
+  /* Diz ao navegador que a pagina e escura. Sem isto, os controles que ele
+     mesmo desenha -- a lista aberta de um <select>, a barra de rolagem, o
+     seletor de arquivo -- saem claros no meio de uma tela escura. */
+  color-scheme: dark;
+
   --sidebar-bg: #0e1a2b;
   --sidebar-bg-2: #0b1422;
   --sidebar-panel: #16243a;
@@ -6,20 +11,33 @@
   --sidebar-text: #c7d4e6;
   --sidebar-muted: #7e91ac;
   --accent: #2f6fed;
-  --accent-soft: #e7effe;
-  --accent-strong: #1f5fe0;
+  --accent-soft: #1b2c4d;
+  /* Dois azuis, e nao um. `--accent-strong` era um azul mais escuro que o
+     `--accent`: certo sobre o `--accent-soft` claro do tema antigo (#e7effe),
+     e ilegivel sobre o escuro (#1b2c4d) -- 2.49:1, quando a WCAG AA pede 4.5.
+     Sobre fundo escuro o realce tem que ser mais **claro**, nao mais escuro. */
+  --accent-strong: #1d4ed8;   /* so como fundo: hover de botao cheio */
+  --accent-text: #a8c5ff;     /* texto e icone sobre superficie escura */
 
-  /* content (light) */
-  --bg: #eef2f7;
-  --surface: #ffffff;
-  --surface-2: #f6f8fb;
-  --surface-3: #eef1f6;
-  --border: #e4e9f1;
-  --border-strong: #cfd8e6;
-  --text: #1f2937;
-  --text-soft: #6b7687;
-  --shadow: 0 1px 3px rgba(16, 30, 54, 0.08), 0 1px 2px rgba(16, 30, 54, 0.04);
-  --shadow-lg: 0 10px 30px rgba(16, 30, 54, 0.12);
+  /* Superficies por elevacao, nao por cor solta. O fundo mais escuro que as
+     superficies e o que cria profundidade sem sombra -- sombra em tema escuro
+     quase nao aparece.
+
+     Ha uma paleta so. O tema claro existia e foi removido: o app e um painel
+     de trabalho com miniaturas de video, e fundo claro em volta de video
+     escuro cansa a vista e falseia a cor do que se esta editando. Manter os
+     dois custava duas paletas para conferir a cada mudanca, e a segunda quase
+     nunca era usada. */
+  --bg: #020617;
+  --surface: #0e1223;
+  --surface-2: #161b30;
+  --surface-3: #1e2540;
+  --border: #232a44;
+  --border-strong: #333c5c;
+  --text: #f8fafc;
+  --text-soft: #94a3b8;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.45);
   --radius: 16px;
   --radius-sm: 12px;
 
@@ -52,23 +70,6 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
-}
-
-[data-theme="dark"] {
-  /* Superficies por elevacao, nao por cor solta. O fundo mais escuro que as
-     superficies e o que cria profundidade sem sombra -- sombra em tema escuro
-     quase nao aparece. */
-  --bg: #020617;
-  --surface: #0e1223;
-  --surface-2: #161b30;
-  --surface-3: #1e2540;
-  --border: #232a44;
-  --border-strong: #333c5c;
-  --text: #f8fafc;
-  --text-soft: #94a3b8;
-  --accent-soft: #1b2c4d;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.45);
 }
 
 * {
@@ -544,7 +545,7 @@ button {
   align-items: center;
   gap: 8px;
   background: var(--accent-soft);
-  color: var(--accent-strong);
+  color: var(--accent-text);
   border-radius: 999px;
   padding: 6px 12px;
   font-size: var(--text-sm);
@@ -721,7 +722,7 @@ input[type="range"] {
 }
 .range-val {
   font-weight: 700;
-  color: var(--accent-strong);
+  color: var(--accent-text);
 }
 
 /* ---------- Toggle ---------- */
@@ -838,7 +839,7 @@ input[type="range"] {
 .progress__pct {
   font-size: var(--text-xs);
   font-weight: 700;
-  color: var(--accent-strong);
+  color: var(--accent-text);
   text-align: right;
   margin-top: 6px;
 }
@@ -925,7 +926,7 @@ input[type="range"] {
 .gen-stage.active {
   opacity: 1;
   background: var(--accent-soft);
-  color: var(--accent-strong);
+  color: var(--accent-text);
 }
 .gen-stage__dot {
   width: 22px;
@@ -946,7 +947,7 @@ input[type="range"] {
 }
 .gen-stage.active .gen-stage__dot {
   border-color: var(--accent);
-  color: var(--accent-strong);
+  color: var(--accent-text);
   animation: stagePulse 1.2s ease infinite;
 }
 @keyframes stagePulse {
@@ -966,7 +967,7 @@ input[type="range"] {
   margin-left: 10px;
   font-size: var(--text-xs);
   font-weight: 600;
-  color: var(--accent-strong);
+  color: var(--accent-text);
   background: var(--accent-soft);
   padding: 4px 10px;
   border-radius: 999px;
@@ -994,21 +995,11 @@ input[type="range"] {
   border: 1px solid;
 }
 .banner--warn {
-  background: #fff7ed;
-  border-color: #fed7aa;
-  color: #9a3412;
-}
-.banner--error {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #991b1b;
-}
-[data-theme="dark"] .banner--warn {
   background: #2a2113;
   border-color: #5a4011;
   color: #fcd9a8;
 }
-[data-theme="dark"] .banner--error {
+.banner--error {
   background: #2a1414;
   border-color: #5a1d1d;
   color: #fca5a5;
@@ -1126,7 +1117,7 @@ input[type="range"] {
 .source-tab.active {
   border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--accent-strong);
+  color: var(--accent-text);
 }
 .source-tab:disabled {
   opacity: 0.55;
@@ -1275,7 +1266,7 @@ input[type="range"] {
   font-size: var(--text-2xl);
   font-weight: 800;
   line-height: 1;
-  color: var(--accent-strong);
+  color: var(--accent-text);
 }
 .metric-card__lbl {
   font-size: var(--text-xs);
@@ -1365,11 +1356,8 @@ input[type="range"] {
   align-items: center;
   gap: 6px;
   font-size: var(--text-xs);
-  color: #15803d;
-  font-weight: 600;
-}
-[data-theme="dark"] .saved-pill {
   color: #4ade80;
+  font-weight: 600;
 }
 .muted {
   color: var(--text-soft);
@@ -1484,7 +1472,7 @@ input[type="range"] {
   border-radius: 999px;
   border: 1px solid var(--border-strong);
   background: var(--accent-soft);
-  color: var(--accent-strong);
+  color: var(--accent-text);
   font-size: var(--text-xs);
   font-weight: 650;
   cursor: pointer;
@@ -1518,14 +1506,11 @@ input[type="range"] {
   font-variant-numeric: tabular-nums;
 }
 .caption__count.is-full {
-  color: var(--accent-strong);
+  color: var(--accent-text);
   font-weight: 650;
 }
 .caption__err {
   font-size: var(--text-xs);
-  color: #b42318;
-}
-[data-theme="dark"] .caption__err {
   color: #ff9b93;
 }
 .btn--xs {
@@ -1651,11 +1636,18 @@ input[type="range"] {
   }
 
   .nav--main,
+  /* `display: contents` nos dois grupos: eles somem como caixa e seus botoes
+     viram filhos diretos da barra. Sem isso, "rolagem" e "rodape" ficavam com
+     metade da largura cada, e a metade com dois itens os espremia enquanto a
+     de um item o jogava sozinho para o canto. */
+  .sidebar__rolagem,
   .sidebar__footer {
-    display: flex;
-    flex-direction: row;
+    display: contents;
+  }
+
+  .sidebar__rolagem > .navitem,
+  .sidebar__footer > .navitem {
     flex: 1;
-    gap: 0;
   }
 
   /* `.nav__item` era o nome antigo; os botoes viraram `.navitem` numa
@@ -1804,6 +1796,9 @@ input[type="range"] {
 .toolbar__add {
   white-space: nowrap;
 }
+.toolbar__add-curto {
+  display: none;
+}
 
 /* Chip que filtra: precisa parecer clicável e mostrar quando está ativo —
    sem isso o usuário não sabe por que a lista encolheu. */
@@ -1939,13 +1934,6 @@ input[type="range"] {
   .nav__vazio,
   .navitem:not(.navitem--principal):not(.sidebar__footer .navitem) {
     display: none;
-  }
-  .sidebar__rolagem {
-    display: flex;
-    flex-direction: row;
-    flex: 1;
-    overflow: visible;
-    min-height: 0;
   }
   .navitem--principal {
     flex-direction: column;
@@ -2486,10 +2474,6 @@ input[type="range"] {
   color: #fbbf24;
 }
 
-.icon-btn--perigo:hover {
-  color: #fca5a5;
-}
-
 .btn--danger {
   background: #7f1d1d;
   color: #fee2e2;
@@ -2531,5 +2515,118 @@ input[type="range"] {
   .results {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: var(--space-2);
+  }
+}
+
+/* ==========================================================================
+   Seções da Biblioteca — só no celular
+   ==========================================================================
+   No desktop elas vivem na barra lateral, agrupadas sob "BIBLIOTECA". No
+   celular a barra virou rodapé e só coube o essencial, e elas ficavam sem
+   caminho nenhum. */
+.secoes {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .secoes {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    /* Rola em vez de quebrar: quatro fichas em 375px cabem justo, e uma quinta
+       no futuro quebraria a linha e mexeria na altura da tela inteira. */
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .secoes::-webkit-scrollbar {
+    display: none;
+  }
+
+  .secoes__ficha {
+    flex: 0 0 auto;
+    /* 44px de alvo de toque, como o resto da navegação. */
+    min-height: 44px;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-soft);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .secoes__ficha--on {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+}
+
+@media (max-width: 720px) {
+  /* Cabeçalho compacto. Título, fichas, números, busca e o botão de adicionar
+     somavam ~600px antes do primeiro vídeo: num telefone de 812px sobrava uma
+     linha e meia de acervo. O acervo é o conteúdo; o cabeçalho é moldura. */
+  .content {
+    padding-top: var(--space-3);
+  }
+
+  .content__head {
+    margin-bottom: var(--space-2);
+  }
+
+  .title {
+    font-size: var(--text-xl);
+  }
+
+  /* Os números continuam, menores e numa linha só. São contexto, não a
+     resposta que se veio buscar. */
+  .statline {
+    font-size: var(--text-xs);
+    margin: 0 0 var(--space-2);
+    white-space: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .statline::-webkit-scrollbar {
+    display: none;
+  }
+  .statline strong {
+    font-size: var(--text-sm);
+  }
+
+  /* Busca e "Adicionar vídeos" na mesma linha. O botão largura-cheia era uma
+     faixa azul de 60px atravessando a tela para uma ação que se faz de vez em
+     quando -- enquanto procurar um vídeo se faz sempre. */
+  .toolbar {
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+  .toolbar__search {
+    flex: 1 1 60%;
+    min-width: 0;
+  }
+  .toolbar__add {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+    order: 2;
+  }
+  .toolbar__add-longo {
+    display: none;
+  }
+  .toolbar__add-curto {
+    display: inline;
+  }
+
+  /* As tags descem para a própria linha. Entre a busca e o botão, elas
+     empurravam o botão para baixo de qualquer jeito -- e aí a linha de cima
+     ficava com um campo de busca sozinho e um espaço vazio ao lado. */
+  .toolbar__tags {
+    order: 3;
+    flex-basis: 100%;
   }
 }
