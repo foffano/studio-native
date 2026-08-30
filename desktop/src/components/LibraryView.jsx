@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   alternarFavorito,
+  criarPasta,
   esvaziarLixeira,
   restaurarVideo,
   updateLibraryFolder,
@@ -12,6 +13,7 @@ import {
 } from "../api.js";
 import LazyVideo from "./LazyVideo.jsx";
 import SourcePanel from "./SourcePanel.jsx";
+import FolderTile from "./FolderTile.jsx";
 import { IconUpload, IconTrash, IconVideo, IconPlus, IconStar, IconRefresh } from "./Icons.jsx";
 
 function fmtDur(sec) {
@@ -43,6 +45,7 @@ export default function LibraryView({
   importarPedido = 0,
   onMudou,
   onUseForGeneration,
+  onAbrirPasta,
 }) {
   const [items, setItems] = useState([]);
   const [metrics, setMetrics] = useState(null);
@@ -58,9 +61,18 @@ export default function LibraryView({
   const [uploadAberto, setUploadAberto] = useState(false);
   const [dias, setDias] = useState(30);
   const [selecionado, setSelecionado] = useState(null);
+  const [arrastando, setArrastando] = useState(null);   // id do video em movimento
+  const [alvo, setAlvo] = useState(null);               // id sob o cursor
   const pollRef = useRef(null);
 
+  // Na raiz ("todos"), o modelo e de gerenciador de arquivos: aparecem as
+  // pastas e os videos que nao estao em nenhuma. Nas outras secoes -- favoritos,
+  // recentes, lixeira -- o recorte e o assunto, e esconder por pasta la
+  // esconderia justamente o que a secao existe para mostrar.
+  const naRaiz = secao === "todos" && pastaId === null;
+
   const visiveis = items.filter((i) => {
+    if (naRaiz && (i.folder_id || "")) return false;
     if (tagFiltro && !(i.tags || []).includes(tagFiltro)) return false;
     const termo = busca.trim().toLowerCase();
     if (!termo) return true;
@@ -105,6 +117,35 @@ export default function LibraryView({
     )) return;
     try {
       await esvaziarLixeira();
+      await refresh();
+      onMudou && onMudou();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  /** Solta um video sobre outro: cria uma pasta com os dois. */
+  const juntarEmPasta = async (idArrastado, idAlvo) => {
+    if (idArrastado === idAlvo) return;
+    const nome = window.prompt("Nome da nova pasta");
+    if (!nome || !nome.trim()) return;
+    try {
+      const pasta = await criarPasta(nome.trim());
+      // Sequencial, e nao em paralelo: os dois escrevem no mesmo library.json,
+      // e duas gravacoes concorrentes se sobrescreveriam.
+      await updateLibraryFolder(idArrastado, pasta.id);
+      await updateLibraryFolder(idAlvo, pasta.id);
+      await refresh();
+      onMudou && onMudou();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  /** Solta um video sobre uma pasta existente. */
+  const soltarNaPasta = async (idArrastado, pastaId) => {
+    try {
+      await updateLibraryFolder(idArrastado, pastaId);
       await refresh();
       onMudou && onMudou();
     } catch (e) {
@@ -340,6 +381,29 @@ export default function LibraryView({
       ) : (
         <div className={"lib-layout" + (selecionado ? " lib-layout--com-painel" : "")}>
         <div className="lib-grid">
+          {naRaiz &&
+            pastas.map((pst) => (
+              <FolderTile
+                key={pst.id}
+                pasta={pst}
+                total={items.filter((i) => (i.folder_id || "") === pst.id).length}
+                amostra={items.filter((i) => (i.folder_id || "") === pst.id).slice(0, 4)}
+                arrastandoSobre={alvo === "pasta:" + pst.id}
+                onAbrir={() => onAbrirPasta && onAbrirPasta(pst.id)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setAlvo("pasta:" + pst.id);
+                }}
+                onDragLeave={() => setAlvo(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setAlvo(null);
+                  const id = e.dataTransfer.getData("text/studio-video");
+                  if (id) soltarNaPasta(id, pst.id);
+                }}
+              />
+            ))}
+
           {visiveis.map((item) => (
             <LibraryCard
               key={item.id}
@@ -359,6 +423,29 @@ export default function LibraryView({
               onRestaurar={() => restaurar(item.id)}
               pastas={pastas}
               naLixeira={naLixeira}
+              arrastavel={!naLixeira}
+              arrastandoSobre={alvo === item.id}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/studio-video", item.id);
+                e.dataTransfer.effectAllowed = "move";
+                setArrastando(item.id);
+              }}
+              onDragEnd={() => {
+                setArrastando(null);
+                setAlvo(null);
+              }}
+              onDragOver={(e) => {
+                if (!arrastando || arrastando === item.id) return;
+                e.preventDefault();
+                setAlvo(item.id);
+              }}
+              onDragLeave={() => setAlvo(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setAlvo(null);
+                const id = e.dataTransfer.getData("text/studio-video");
+                if (id && id !== item.id) juntarEmPasta(id, item.id);
+              }}
             />
           ))}
         </div>
@@ -391,6 +478,9 @@ function LibraryCard({
   selecionado = false,
   pastas = [],
   naLixeira = false,
+  arrastavel = false,
+  arrastandoSobre = false,
+  ...dnd
 }) {
   const ready = item.status === "ready";
   const pending = item.status === "processing" || item.status === "queued";
@@ -401,8 +491,11 @@ function LibraryCard({
       className={
         "lib-card" +
         (pending ? " lib-card--busy" : "") +
-        (selecionado ? " lib-card--on" : "")
+        (selecionado ? " lib-card--on" : "") +
+        (arrastandoSobre ? " lib-card--alvo" : "")
       }
+      draggable={arrastavel}
+      {...dnd}
     >
       {/* A miniatura e o nome abrem o painel; os controles do corpo continuam
           com as acoes deles. Botao, e nao div com onClick, para funcionar com

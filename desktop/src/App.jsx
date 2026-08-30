@@ -225,6 +225,9 @@ export default function App() {
             importarPedido={importarPedido}
             onMudou={recarregarNav}
             onUseForGeneration={handleUseLibrary}
+            onAbrirPasta={(id) =>
+              setDestino({ area: "pasta", pastaId: id, secao: "fontes" })
+            }
           />
         )}
 
