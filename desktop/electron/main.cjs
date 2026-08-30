@@ -161,6 +161,34 @@ async function getFreePort() {
   return portaSorteada();
 }
 
+/** Ja existe um Studio Native servindo nesta porta?
+ *
+ * Desde que o backend virou servico em segundo plano, a 5050 costuma estar
+ * ocupada quando a janela abre -- e ai o Electron nao deve subir um segundo
+ * backend. Dois processos contra o mesmo SQLite, e o backend recusando iniciar
+ * pela guarda de porta, deixariam a janela sem nada para mostrar.
+ *
+ * Conferimos que quem responde e o proprio app, e nao qualquer coisa que
+ * calhou de estar na porta.
+ */
+function backendJaRodando(porta) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: "127.0.0.1", port: porta, path: "/api/health", timeout: 1500 },
+      (res) => {
+        let corpo = "";
+        res.on("data", (d) => (corpo += d));
+        res.on("end", () => resolve(res.statusCode === 200 && corpo.includes("ok")));
+      }
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
 function repoRoot() {
   // desktop/electron/main.cjs -> repo root (dois niveis acima)
   return path.resolve(__dirname, "..", "..");
@@ -228,11 +256,19 @@ function waitForHealth(url, timeoutMs = 30000) {
 }
 
 async function createWindow() {
-  const port = await getFreePort();
+  // Se o servico ja esta de pe na porta preferida, a janela apenas se conecta
+  // a ele. Antes disso o Electron sempre subia o proprio backend, e com o
+  // servico rodando os dois brigariam pela mesma porta e pelo mesmo banco.
+  const reaproveitar = await backendJaRodando(PORTA_PREFERIDA);
+  const port = reaproveitar ? PORTA_PREFERIDA : await getFreePort();
   backendUrl = `http://127.0.0.1:${port}`;
   process.env.STUDIO_BACKEND_URL = backendUrl;
 
-  startBackend(port);
+  if (reaproveitar) {
+    console.log(`[StudioNative] backend ja rodando em ${backendUrl}; reaproveitando`);
+  } else {
+    startBackend(port);
+  }
   try {
     await waitForHealth(backendUrl, 40000);
     console.log("[StudioNative] backend pronto em", backendUrl);
