@@ -1658,7 +1658,11 @@ input[type="range"] {
     gap: 0;
   }
 
-  .nav__item {
+  /* `.nav__item` era o nome antigo; os botoes viraram `.navitem` numa
+     renomeacao e esta regra ficou apontando para o vazio. O efeito era um
+     rodape com alvos de 33px -- abaixo dos 44px que a diretriz de toque pede,
+     e justamente nos itens que se erra mais, os das pontas. */
+  .sidebar__footer .navitem {
     flex-direction: column;
     gap: 3px;
     font-size: var(--text-xs);
@@ -1666,6 +1670,11 @@ input[type="range"] {
     text-align: center;
     min-height: 52px;
     justify-content: center;
+  }
+
+  /* O icone acima do texto, como nos itens principais. */
+  .sidebar__footer .navitem__ico {
+    line-height: 0;
   }
 
   .content {
@@ -2508,4 +2517,19 @@ input[type="range"] {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+@media (max-width: 720px) {
+  /* Duas colunas no celular. Com `minmax(220px, 1fr)` cabia **uma** só: 375px
+     de tela menos o respiro deixam ~347px, e um segundo cartão de 220px não
+     entra. Um vídeo por linha transforma um mural de 36 numa rolagem longa,
+     que é exatamente o que a grade existe para evitar.
+
+     140px é o menor que ainda deixa reconhecer a cena; abaixo disso a
+     miniatura vira mancha de cor. */
+  .lib-grid,
+  .results {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-2);
+  }
 }
