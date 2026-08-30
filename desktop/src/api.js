@@ -196,10 +196,16 @@ export async function disconnectTikTok() {
   return jsonOrThrow(res);
 }
 
-/** Abre a autorizacao no navegador do sistema.
+/** Leva o usuário à tela de autorização do TikTok.
  *
- * Fora do Electron (dev no navegador) cai em window.open, que serve para
- * testar o fluxo sem empacotar o app.
+ * No Electron, abre no navegador do sistema — dentro de uma janela nossa
+ * teríamos acesso ao cookie de sessão do TikTok, e ele recusa isso.
+ *
+ * No navegador, navega **na própria aba** em vez de abrir outra. Abrir aba nova
+ * depois de um `await` perde o vínculo com o clique do usuário, e o Safari do
+ * iOS bloqueia como popup — justamente no celular, que é onde este caminho mais
+ * importa. Navegar na mesma aba também é o fluxo normal de OAuth: o TikTok
+ * devolve para o app, e a página de retorno traz de volta.
  */
 export async function openAuthorizeUrl(url) {
   const bridge = typeof window !== "undefined" && window.studioNative;
@@ -208,7 +214,7 @@ export async function openAuthorizeUrl(url) {
     if (!r || !r.ok) throw new Error((r && r.error) || "Nao foi possivel abrir o navegador");
     return;
   }
-  window.open(url, "_blank", "noopener");
+  window.location.assign(url);
 }
 
 // --- Publicar no TikTok ----------------------------------------------------

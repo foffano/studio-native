@@ -27,8 +27,12 @@ const TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 // que está registrado no portal; isto é a segunda tranca, para o Worker não
 // poder ser usado como peça de um fluxo de terceiros.
 const ALLOWED_REDIRECTS = [
+  // Acesso pelo proprio PC: o retorno vai para o listener descartavel.
   "http://127.0.0.1:43117/api/tiktok/callback",
   "http://localhost:43117/api/tiktok/callback",
+  // Acesso de fora (celular, pelo tunel): o loopback nao serve, porque
+  // 127.0.0.1 no telefone e o proprio telefone. O retorno vai para o app.
+  "https://native.toffa.com.br/api/tiktok/callback",
 ];
 
 // Porta fixa que o backend do app escuta para receber o callback.

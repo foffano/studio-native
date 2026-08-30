@@ -12,6 +12,20 @@ O fluxo inteiro, em ordem:
 6. Buscamos apelido e avatar (`user.info.basic`) e gravamos a conta, com os
    tokens cifrados.
 
+## Dois caminhos de volta, e por que
+
+O TikTok precisa devolver o usuario para algum lugar depois da autorizacao.
+
+- **Do PC**: `http://127.0.0.1:43117/api/tiktok/callback`, atendido por um
+  servidor descartavel que sobe so durante o login.
+- **De fora** (celular, pelo tunel): o loopback nao serve -- `127.0.0.1` no
+  telefone e o proprio telefone, que nao tem nada escutando. Ai o retorno vai
+  para a URL publica do app, e quem atende e uma rota normal do Flask.
+
+Quem decide e a origem do pedido: se voce clicou em "Conectar" a partir de
+`https://native.toffa.com.br`, o retorno vai para la. Os dois precisam estar
+registrados no portal do TikTok e na allowlist do Worker.
+
 ## Por que 43117 nao e a porta do backend
 
 O backend sobe numa porta livre sorteada pelo Electron. Fixar ele em 43117
@@ -45,6 +59,21 @@ AUTH_SERVICE = os.getenv("STUDIO_TIKTOK_AUTH_URL", "https://auth.toffa.com.br").
 LOOPBACK_PORT = 43117
 CALLBACK_PATH = "/api/tiktok/callback"
 REDIRECT_URI = f"http://127.0.0.1:{LOOPBACK_PORT}{CALLBACK_PATH}"
+
+
+def redirect_para(origem=None):
+    """Escolhe o endereco de retorno a partir de onde o pedido veio.
+
+    `origem` e a `request.host_url` do Flask. Quando ela aponta para um endereco
+    publico, o retorno vai para la; do contrario, para o loopback. Comparar com
+    "localhost"/"127.0.0.1" e o suficiente porque so existem esses dois casos.
+    """
+    if not origem:
+        return REDIRECT_URI
+    base = origem.rstrip("/")
+    if "://127.0.0.1" in base or "://localhost" in base:
+        return REDIRECT_URI
+    return f"{base}{CALLBACK_PATH}"
 
 AUTHORIZE_URL = "https://www.tiktok.com/v2/auth/authorize/"
 USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/"
@@ -267,9 +296,11 @@ _PAGINA = """<!doctype html><html lang="pt-BR"><meta charset="utf-8">
       display:grid;place-items:center;height:100vh;margin:0;text-align:center}}
  .c{{max-width:30rem;padding:2rem}} h1{{font-size:1.4rem;margin:0 0 .5rem}}
  .ok{{color:#4ade80}} .bad{{color:#f87171}} p{{color:#9fb0c8;margin:.4rem 0}}
+ .btn{{display:inline-block;margin-top:1.2rem;padding:.75rem 1.5rem;border-radius:10px;
+       background:#2563eb;color:#fff;text-decoration:none;font-weight:600}}
 </style>
 <div class="c"><h1 class="{cls}">{titulo}</h1><p>{texto}</p>
-<p>Pode fechar esta aba e voltar ao Studio Native.</p></div>"""
+<a class="btn" href="/">Voltar ao Studio Native</a></div>"""
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -295,56 +326,99 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             return
 
         params = urllib.parse.parse_qs(parsed.query)
-        code = (params.get("code") or [""])[0]
-        state = (params.get("state") or [""])[0]
-        erro = (params.get("error") or [""])[0]
-
-        with _LOCK:
-            fluxo = dict(_FLOW) if _FLOW else None
-
-        if not fluxo:
-            self._responder("Login expirado", "Tente conectar de novo pelo app.", "bad")
-            return
-
-        # O `state` e a defesa contra alguem induzir o navegador a completar um
-        # login que nao foi o usuario que comecou.
-        if not state or not secrets.compare_digest(state, fluxo["state_token"]):
-            _set_flow(status="erro", error="O state nao confere; login descartado.")
-            self._responder("Login recusado", "O state nao confere.", "bad")
-            return
-
-        if erro:
-            _set_flow(status="erro", error=f"O TikTok recusou: {erro}")
-            self._responder("Autorizacao negada", f"O TikTok respondeu: {erro}", "bad")
-            return
-
-        if not code:
-            _set_flow(status="erro", error="O TikTok nao devolveu o code.")
-            self._responder("Login incompleto", "Nenhum codigo recebido.", "bad")
-            return
-
-        try:
-            tokens = _exchange(
-                "/tiktok/token",
-                {
-                    "code": code,
-                    "code_verifier": fluxo["verifier"],
-                    "redirect_uri": REDIRECT_URI,
-                },
-                "Troca de token",
-            )
-            conta = _save_account(tokens)
-        except TikTokError as e:
-            _set_flow(status="erro", error=str(e))
-            self._responder("Nao deu certo", str(e), "bad")
-            return
-
-        _set_flow(status="conectado", account_id=conta["id"], error="")
-        self._responder(
-            "Conta conectada",
-            f"@{conta.get('nickname') or 'conta'} esta ligada ao Studio Native.",
-            "ok",
+        resultado = processar_callback(
+            code=(params.get("code") or [""])[0],
+            state=(params.get("state") or [""])[0],
+            erro=(params.get("error") or [""])[0],
+            redirect_uri=REDIRECT_URI,
         )
+        self._responder(resultado["titulo"], resultado["texto"], resultado["classe"])
+
+
+def processar_callback(code, state, erro, redirect_uri):
+    """Conclui o login: confere o state, troca o code por token, grava a conta.
+
+    Vive aqui, e nao dentro do handler, porque existem dois caminhos de volta --
+    o loopback e a rota publica do Flask -- e duplicar esta logica seria duplicar
+    a verificacao do `state`, que e justamente a parte que nao pode divergir.
+
+    Devolve o que mostrar ao usuario; nao levanta excecao, porque quem chama
+    esta sempre renderizando uma pagina para um navegador.
+    """
+    with _LOCK:
+        fluxo = dict(_FLOW) if _FLOW else None
+
+    if not fluxo:
+        return {
+            "ok": False,
+            "titulo": "Login expirado",
+            "texto": "Tente conectar de novo pelo app.",
+            "classe": "bad",
+        }
+
+    # O `state` e a defesa contra alguem induzir o navegador a completar um
+    # login que nao foi o usuario que comecou.
+    if not state or not secrets.compare_digest(state, fluxo["state_token"]):
+        _set_flow(status="erro", error="O state nao confere; login descartado.")
+        return {
+            "ok": False,
+            "titulo": "Login recusado",
+            "texto": "O state nao confere.",
+            "classe": "bad",
+        }
+
+    if erro:
+        _set_flow(status="erro", error=f"O TikTok recusou: {erro}")
+        return {
+            "ok": False,
+            "titulo": "Autorizacao negada",
+            "texto": f"O TikTok respondeu: {erro}",
+            "classe": "bad",
+        }
+
+    if not code:
+        _set_flow(status="erro", error="O TikTok nao devolveu o code.")
+        return {
+            "ok": False,
+            "titulo": "Login incompleto",
+            "texto": "Nenhum codigo recebido.",
+            "classe": "bad",
+        }
+
+    try:
+        tokens = _exchange(
+            "/tiktok/token",
+            {
+                "code": code,
+                "code_verifier": fluxo["verifier"],
+                # Precisa ser byte a byte o mesmo que foi na autorizacao: o
+                # TikTok confere, e usar o outro caminho de volta aqui derrubaria
+                # a troca com um erro que nao explica nada.
+                "redirect_uri": redirect_uri,
+            },
+            "Troca de token",
+        )
+        conta = _save_account(tokens)
+    except TikTokError as e:
+        _set_flow(status="erro", error=str(e))
+        return {"ok": False, "titulo": "Nao deu certo", "texto": str(e), "classe": "bad"}
+
+    _set_flow(status="conectado", account_id=conta["id"], error="")
+    return {
+        "ok": True,
+        "titulo": "Conta conectada",
+        "texto": f"@{conta.get('nickname') or 'conta'} esta ligada ao Studio Native.",
+        "classe": "ok",
+    }
+
+
+def pagina_de_retorno(resultado):
+    """HTML da pagina que o usuario ve ao voltar do TikTok."""
+    return _PAGINA.format(
+        titulo=resultado["titulo"],
+        texto=resultado["texto"],
+        cls=resultado["classe"],
+    )
 
 
 def _serve(server, deadline):
@@ -371,22 +445,30 @@ def _serve(server, deadline):
 # API usada pelas rotas do Flask
 # ---------------------------------------------------------------------------
 
-def start_connect():
-    """Prepara o login e devolve a URL de autorizacao para o app abrir."""
+def start_connect(origem=None):
+    """Prepara o login e devolve a URL de autorizacao para o app abrir.
+
+    `origem` e a `request.host_url`: e ela que decide se o TikTok devolve o
+    usuario para o loopback (acesso pelo PC) ou para a URL publica (celular).
+    """
     global _FLOW, _SERVER, _THREAD
 
     config = service_config()
+    redirect_uri = redirect_para(origem)
+    pelo_loopback = redirect_uri == REDIRECT_URI
 
     _stop_flow()
 
-    try:
-        server = HTTPServer(("127.0.0.1", LOOPBACK_PORT), _CallbackHandler)
-    except OSError as e:
-        raise TikTokError(
-            f"A porta {LOOPBACK_PORT} esta ocupada por outro programa, e o TikTok "
-            f"exige exatamente ela no retorno do login. Feche o que estiver "
-            f"usando a porta e tente de novo. ({e})"
-        )
+    server = None
+    if pelo_loopback:
+        try:
+            server = HTTPServer(("127.0.0.1", LOOPBACK_PORT), _CallbackHandler)
+        except OSError as e:
+            raise TikTokError(
+                f"A porta {LOOPBACK_PORT} esta ocupada por outro programa, e o "
+                f"TikTok exige exatamente ela no retorno do login. Feche o que "
+                f"estiver usando a porta e tente de novo. ({e})"
+            )
 
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(24)
@@ -403,23 +485,38 @@ def start_connect():
             "state_token": state,
             "deadline": deadline,
             "error": "",
+            # Guardado porque a troca do code exige o mesmo redirect_uri da
+            # autorizacao, e quem conclui pode ser a rota do Flask.
+            "redirect_uri": redirect_uri,
         }
         _SERVER = server
-        _THREAD = threading.Thread(
-            target=_serve, args=(server, deadline), daemon=True
-        )
-        _THREAD.start()
+        if server is not None:
+            _THREAD = threading.Thread(
+                target=_serve, args=(server, deadline), daemon=True
+            )
+            _THREAD.start()
 
     query = urllib.parse.urlencode({
         "client_key": config["client_key"],
         "scope": config.get("scopes") or "user.info.basic,video.upload",
         "response_type": "code",
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     })
-    return {"url": f"{AUTHORIZE_URL}?{query}", "expira_em": FLOW_TIMEOUT}
+    return {
+        "url": f"{AUTHORIZE_URL}?{query}",
+        "expira_em": FLOW_TIMEOUT,
+        "redirect_uri": redirect_uri,
+        "pelo_loopback": pelo_loopback,
+    }
+
+
+def redirect_do_fluxo():
+    """O redirect_uri do login em andamento, para a rota do Flask concluir."""
+    with _LOCK:
+        return (_FLOW or {}).get("redirect_uri") or REDIRECT_URI
 
 
 def cancel_connect():

@@ -226,6 +226,39 @@ init_settings()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB
 
+def _corrigir_esquema(wsgi_app):
+    """Faz o Flask saber que o pedido chegou por HTTPS.
+
+    Atras do tunel, a Cloudflare entrega ao Flask em HTTP puro no loopback --
+    entao `request.host_url` diria "http://native.toffa.com.br". O
+    `redirect_uri` do OAuth sairia com o esquema errado, e o TikTok, que compara
+    byte a byte com o que esta registrado, recusaria a troca com um erro que nao
+    menciona esquema nenhum.
+
+    **O `ProxyFix` do Werkzeug nao resolve aqui**: ele procura
+    `X-Forwarded-Proto`, e o cloudflared nao envia esse cabecalho. Quem carrega
+    a informacao e o `CF-Visitor`, no formato `{"scheme":"https"}`.
+
+    So confiamos no cabecalho quando a conexao vem do loopback, que e por onde o
+    tunel entrega; de qualquer outra origem, ele e ignorado.
+    """
+    def middleware(environ, start_response):
+        remoto = environ.get("REMOTE_ADDR", "")
+        visitor = environ.get("HTTP_CF_VISITOR", "")
+        if remoto in ("127.0.0.1", "::1") and visitor:
+            try:
+                esquema = json.loads(visitor).get("scheme")
+            except (ValueError, AttributeError):
+                esquema = None
+            if esquema in ("http", "https"):
+                environ["wsgi.url_scheme"] = esquema
+        return wsgi_app(environ, start_response)
+
+    return middleware
+
+
+app.wsgi_app = _corrigir_esquema(app.wsgi_app)
+
 app.secret_key = auth.obter_secret_key(SETTINGS, _save_config_file)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -2296,11 +2329,37 @@ def api_tiktok_disconnect():
 
 @app.route("/api/tiktok/connect", methods=["POST"])
 def api_tiktok_connect():
-    """Prepara o login e devolve a URL para o app abrir no navegador."""
+    """Prepara o login e devolve a URL para o app abrir no navegador.
+
+    `request.host_url` decide o caminho de volta: acessado do PC, o TikTok
+    devolve no loopback; acessado pela URL publica, devolve na rota abaixo.
+    """
     try:
-        return jsonify(tiktok.start_connect())
+        return jsonify(tiktok.start_connect(request.host_url))
     except tiktok.TikTokError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/tiktok/callback", methods=["GET"])
+def api_tiktok_callback():
+    """Retorno do TikTok quando o login comecou por um endereco publico.
+
+    Fica atras da sessao de proposito. O TikTok redireciona o navegador para ca
+    numa navegacao de primeiro nivel, e o cookie e SameSite=Lax -- ou seja, ele
+    viaja. Deixar a rota publica so abriria uma porta a mais sem ganho nenhum;
+    quem nao esta logado nao tinha como iniciar o fluxo.
+    """
+    resultado = tiktok.processar_callback(
+        code=request.args.get("code", ""),
+        state=request.args.get("state", ""),
+        erro=request.args.get("error", ""),
+        redirect_uri=tiktok.redirect_do_fluxo(),
+    )
+    return (
+        tiktok.pagina_de_retorno(resultado),
+        200,
+        {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"},
+    )
 
 
 @app.route("/api/tiktok/connect", methods=["DELETE"])
