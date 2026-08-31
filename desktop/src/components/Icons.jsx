@@ -18,6 +18,18 @@ export const IconVideo = (p) => (
   </svg>
 );
 
+export const IconPlay = (p) => (
+  <svg {...base} {...p}>
+    <path d="m8 5 11 7-11 7V5Z" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const IconPause = (p) => (
+  <svg {...base} {...p}>
+    <path d="M9 5v14M15 5v14" />
+  </svg>
+);
+
 export const IconHistory = (p) => (
   <svg {...base} {...p}>
     <path d="M3 3v5h5" />

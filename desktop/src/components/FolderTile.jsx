@@ -1,6 +1,6 @@
 import React from "react";
 import LazyVideo from "./LazyVideo.jsx";
-import { libraryVideoUrl } from "../api.js";
+import { libraryThumbnailUrl, libraryVideoUrl } from "../api.js";
 
 /**
  * Uma pasta na grade da Biblioteca, com uma amostra do que tem dentro.
@@ -19,7 +19,12 @@ export default function FolderTile({ pasta, amostra = [], total = 0, onAbrir, ar
         <div className="pastile__mosaico">
           {amostra.slice(0, 4).map((i) => (
             <div className="pastile__celula" key={i.id}>
-              {i.file && <LazyVideo src={libraryVideoUrl(i.file)} />}
+              {i.file && (
+                <LazyVideo
+                  src={libraryVideoUrl(i.file)}
+                  poster={libraryThumbnailUrl(i.id)}
+                />
+              )}
             </div>
           ))}
           {amostra.length === 0 && <div className="pastile__vazia">pasta vazia</div>}

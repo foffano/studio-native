@@ -84,12 +84,14 @@ WEB_DIR = resource_path("webui")
 if not WEB_DIR.exists():
     WEB_DIR = Path(__file__).resolve().parent / "desktop" / "dist"
 LIBRARY_DIR = USER_DATA_DIR / "library"
+LIBRARY_THUMB_DIR = USER_DATA_DIR / "library_thumbs"
 LIBRARY_STAGING = USER_DATA_DIR / "library_staging"
 LIBRARY_META_PATH = USER_DATA_DIR / "library.json"
 STUDIO_DB_PATH = USER_DATA_DIR / "studio.db"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+LIBRARY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_STAGING.mkdir(parents=True, exist_ok=True)
 
 # Carrega .env (apenas em dev / compatibilidade) sem sobrescrever o ambiente.
@@ -528,6 +530,7 @@ def purgar_lixeira():
                 (LIBRARY_DIR / fname).unlink(missing_ok=True)
             except OSError:
                 pass
+        (LIBRARY_THUMB_DIR / f"{item['id']}.jpg").unlink(missing_ok=True)
         apagados += 1
     if apagados:
         _save_library_file()
@@ -591,6 +594,7 @@ def preprocess_library_item(item_id, src_path):
             error="",
         )
         normalize_video(src_path, dst_path)
+        create_library_thumbnail(dst_path, item_id)
         dur = media_duration(dst_path)
         size = dst_path.stat().st_size if dst_path.exists() else 0
         set_library_item(
@@ -867,6 +871,46 @@ def normalize_video(src_path, dst_path):
         "Falha ao normalizar o video com ffmpeg. "
         f"Detalhe: {err2 or err}"
     )
+
+
+def create_library_thumbnail(video_path, item_id):
+    """Extrai uma capa JPEG leve para o card, sem depender do primeiro frame
+    do elemento <video> (que Safari/iOS só costuma pintar depois do play)."""
+    thumb_path = LIBRARY_THUMB_DIR / f"{item_id}.jpg"
+    temp_path = LIBRARY_THUMB_DIR / f"{item_id}.tmp.jpg"
+    try:
+        cmd = [
+            FFMPEG_BIN, "-y",
+            "-ss", "0.20",
+            "-i", str(video_path),
+            "-frames:v", "1",
+            "-vf", "scale=480:-2:force_original_aspect_ratio=decrease",
+            "-q:v", "5",
+            str(temp_path),
+        ]
+        code, _ = _run_ffmpeg(cmd)
+        if code == 0 and temp_path.exists() and temp_path.stat().st_size > 0:
+            temp_path.replace(thumb_path)
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    temp_path.unlink(missing_ok=True)
+    return False
+
+
+def backfill_library_thumbnails():
+    """Completa capas antigas em segundo plano, uma por vez, sem atrasar o boot."""
+    with LIBRARY_LOCK:
+        items = [dict(item) for item in LIBRARY.values()]
+    for item in items:
+        item_id = item.get("id")
+        filename = item.get("file")
+        if not item_id or not filename:
+            continue
+        thumb = LIBRARY_THUMB_DIR / f"{item_id}.jpg"
+        video = LIBRARY_DIR / filename
+        if not thumb.exists() and video.exists():
+            create_library_thumbnail(video, item_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1206,21 +1250,26 @@ def _openrouter_chat(system_prompt, user_prompt, temperature=0.9):
 
 
 def words_target_for_duration(duration):
-    """Numero maximo de palavras da narracao para caber na duracao do video,
-    com margem de seguranca para nao estourar."""
+    """Alvo de palavras para a fala ocupar o video em ritmo comercial natural."""
     if duration <= 0:
         duration = 8.0
-    return max(6, int(duration * WORDS_PER_SECOND * 0.85))
+    return max(12, int(round(duration * WORDS_PER_SECOND)))
+
+
+def speech_word_count(text):
+    return len(re.findall(r"\b[\wÀ-ÿ]+\b", str(text or ""), re.UNICODE))
 
 
 def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None):
     """Gera n itens coerentes (overlay na tela + narracao + legenda do post),
     usando tecnicas de videos virais de TikTok e respeitando o limite de
     palavras compativel com a duracao do video. So texto vai para a IA."""
-    # Alvo de palavras baseado na duracao do video + 10s (a montagem estende o
-    # ultimo frame para caber a narracao mais longa).
-    budget_duration = (video_duration if video_duration > 0 else 8.0) + 10
-    words_max = words_target_for_duration(budget_duration)
+    # A fala deve ocupar o video original. Uma faixa estreita funciona melhor
+    # que "no maximo": teto isolado faz o modelo entregar roteiros muito curtos.
+    target_duration = max(5.0, (video_duration if video_duration > 0 else 8.0) - 0.4)
+    words_target = words_target_for_duration(target_duration)
+    words_min = max(10, int(words_target * 0.92))
+    words_max = max(words_min + 3, int(words_target * 1.08))
     theme_part = (
         f'Tema/contexto do video: "{theme}".'
         if theme
@@ -1228,21 +1277,28 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None):
     )
 
     system_prompt = (
-        "Voce e um roteirista especialista em videos virais de TikTok/Reels/Shorts "
-        "em portugues do Brasil. Aplique tecnicas de viralizacao: HOOK forte nos "
-        "primeiros segundos, linguagem coloquial e direta, gatilhos de curiosidade e "
-        "retencao, frases curtas e ritmadas, e uma call-to-action no final."
+        "Voce e um roteirista brasileiro especialista em videos de venda para TikTok "
+        "Shop. Escreva fala natural, persuasiva e ritmada, feita para ser narrada, "
+        "sem inventar preco, desconto, certificacao, resultado garantido ou atributo "
+        "do produto que nao esteja no contexto. O objetivo e reter, demonstrar valor "
+        "e levar a pessoa ao carrinho laranja."
     )
 
     user_prompt = (
         f"{theme_part}\n\n"
-        f"O video tem cerca de {video_duration:.0f} segundos.\n"
+        f"O video tem {video_duration:.1f} segundos e a narracao precisa ocupar praticamente todo esse tempo.\n"
         f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         "- \"overlay\": frase curta e impactante para FICAR NA TELA do video "
         "(maximo ~8 palavras, pode usar 1 emoji);\n"
-        "- \"speech\": o texto da NARRACAO falada, coerente com a overlay, "
-        f"com no MAXIMO {words_max} palavras para caber em ~{budget_duration:.0f}s "
-        "(ritmo de fala natural). NAO use emojis na speech;\n"
+        "- \"speech\": roteiro contínuo da NARRACAO, sem títulos ou marcações, "
+        f"com OBRIGATORIAMENTE entre {words_min} e {words_max} palavras "
+        f"(alvo ideal: {words_target}). Não entregue menos que {words_min}. "
+        "Estruture a fala nesta ordem: (1) GANCHO imediato que interrompe a rolagem; "
+        "(2) problema ou desejo do público; (3) apresentação do produto/solução com "
+        "benefícios concretos e linguagem de demonstração; (4) quebra de objeção, "
+        "prova percebida ou cenário de uso, sem inventar fatos; (5) última frase com "
+        "CTA explícita para clicar no carrinho laranja e conferir o produto agora. "
+        "Não escreva as palavras 'gancho', 'desenvolvimento' ou 'CTA'. Não use emojis;\n"
         "- \"caption\": a legenda do post, curta, no maximo 150 caracteres, "
         "SEM hashtags dentro dela;\n"
         f"- \"hashtags\": no maximo {cap.MAX_HASHTAGS} hashtags relevantes, sem o "
@@ -1253,10 +1309,34 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None):
         "Sem explicacoes nem texto fora do JSON."
     )
 
-    content = _openrouter_chat(system_prompt, user_prompt)
+    content = _openrouter_chat(system_prompt, user_prompt, temperature=0.75)
     items = parse_overlay_speech(content, n)
     if not items:
         raise RuntimeError("A IA nao retornou overlay/speech validos.")
+
+    # Uma segunda tentativa focada evita aceitar silenciosamente o mesmo defeito
+    # que motivou esta regra: roteiro bem escrito, mas curto demais para o video.
+    if len(items) < n or any(speech_word_count(i.get("speech")) < words_min for i in items):
+        retry_prompt = (
+            user_prompt
+            + "\n\nA resposta anterior ficou curta e foi rejeitada. Confira a contagem "
+            f"antes de responder: cada speech deve ter de {words_min} a {words_max} "
+            "palavras e terminar chamando para clicar no carrinho laranja."
+        )
+        retried = parse_overlay_speech(
+            _openrouter_chat(system_prompt, retry_prompt, temperature=0.65), n
+        )
+        if len(retried) == n and all(
+            speech_word_count(i.get("speech")) >= words_min for i in retried
+        ):
+            items = retried
+        elif retried:
+            # Se a segunda resposta ainda nao ficou perfeita, conserva para cada
+            # variante a versao mais completa em vez de trocar uma boa por uma pior.
+            items = [
+                max(pair, key=lambda i: speech_word_count(i.get("speech")))
+                for pair in zip(items, retried)
+            ] + items[len(retried):]
 
     for item in items:
         item["caption"], item["hashtags"] = cap.finalize(
@@ -1395,6 +1475,12 @@ def render_video(src_path, text, out_path, options, audio_path=None):
 
         if audio_path:
             narration = AudioFileClip(str(audio_path))
+            # Se falta apenas uma pequena margem, desacelera suavemente a fala
+            # para ela terminar junto do video. Abaixo de 85% isso soaria artificial;
+            # nesse caso preservamos a voz e deixamos a validacao do roteiro agir.
+            fill_ratio = narration.duration / video.duration if video.duration else 1.0
+            if 0.85 <= fill_ratio < 0.995:
+                narration = narration.with_speed_scaled(fill_ratio)
             if narration.duration > video.duration + 0.05:
                 # Congela o ultimo frame para estender o video ate o fim do audio.
                 extra = narration.duration - video.duration
@@ -1794,6 +1880,11 @@ def library_file(filename):
     return send_from_directory(LIBRARY_DIR, filename)
 
 
+@app.route("/library-thumbs/<path:filename>")
+def library_thumbnail(filename):
+    return send_from_directory(LIBRARY_THUMB_DIR, filename, max_age=86400)
+
+
 # ---------------------------------------------------------------------------
 # Catalogo de producao: os videos que o app gerou, com legenda e hashtags.
 # ---------------------------------------------------------------------------
@@ -2042,6 +2133,7 @@ def api_library_delete(item_id):
                 (LIBRARY_DIR / fname).unlink(missing_ok=True)
             except OSError:
                 pass
+        (LIBRARY_THUMB_DIR / f"{item_id}.jpg").unlink(missing_ok=True)
         return jsonify({"ok": True, "apagado": True})
 
     set_library_item(item_id, excluido_em=datetime.now(timezone.utc).isoformat())
@@ -2080,6 +2172,7 @@ def api_library_empty_trash():
                 (LIBRARY_DIR / fname).unlink(missing_ok=True)
             except OSError:
                 pass
+        (LIBRARY_THUMB_DIR / f"{item['id']}.jpg").unlink(missing_ok=True)
         apagados += 1
     if apagados:
         _save_library_file()
@@ -2616,6 +2709,12 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print(f"[StudioNative] backend em http://{host}:{port}", flush=True)
+
+    threading.Thread(
+        target=backfill_library_thumbnails,
+        name="library-thumbnails",
+        daemon=True,
+    ).start()
 
     # Servidor de producao. O `app.run()` do Flask e o servidor de
     # desenvolvimento do Werkzeug -- a propria documentacao dele diz para nao

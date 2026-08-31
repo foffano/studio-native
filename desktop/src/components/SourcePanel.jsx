@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
 import { IconStar, IconTrash, IconPlus } from "./Icons.jsx";
-import { getOutputs, libraryVideoUrl, outputUrl } from "../api.js";
+import { getOutputs, libraryThumbnailUrl, libraryVideoUrl, outputUrl } from "../api.js";
 
 function fmtDur(sec) {
   if (!sec) return "";
@@ -94,7 +94,12 @@ export default function SourcePanel({
       <div className="painel__topo">
         <div className="painel__id">
           <div className="painel__thumb">
-            {item.file && <LazyVideo src={libraryVideoUrl(item.file)} />}
+            {item.file && (
+              <LazyVideo
+                src={libraryVideoUrl(item.file)}
+                poster={libraryThumbnailUrl(item.id)}
+              />
+            )}
           </div>
           <div className="painel__titulo">
             <h2 title={item.name}>{item.name}</h2>

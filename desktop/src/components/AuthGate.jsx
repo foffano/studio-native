@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getAuthStatus, login, setupPassword } from "../api.js";
+import logo from "../assets/logo.png";
 
 /**
  * Porta de entrada: nada do app é montado antes de a sessão existir.
@@ -64,6 +65,10 @@ export default function AuthGate({ children }) {
   return (
     <div className="auth-screen">
       <form className="auth-box" onSubmit={enviar}>
+        <div className="auth-box__brand" aria-hidden="true">
+          <img src={logo} alt="" className="auth-box__logo" />
+          <span>Seu estúdio criativo</span>
+        </div>
         <h1 className="auth-box__title">Studio Native</h1>
 
         {primeiroAcesso ? (

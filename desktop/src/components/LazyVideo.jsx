@@ -24,9 +24,16 @@ export default function LazyVideo({
   // razoes de aspecto e esticava os cartoes.
   proporcao = null,
   onError,
+  playing = false,
+  onEnded,
+  poster = "",
 }) {
   const ref = useRef(null);
+  const videoRef = useRef(null);
   const [visivel, setVisivel] = useState(false);
+  const [posterFailed, setPosterFailed] = useState(false);
+
+  useEffect(() => setPosterFailed(false), [poster]);
 
   useEffect(() => {
     const el = ref.current;
@@ -54,6 +61,17 @@ export default function LazyVideo({
     return () => obs.disconnect();
   }, []);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (playing) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+      video.currentTime = 0;
+    }
+  }, [playing, visivel]);
+
   return (
     <div
       ref={ref}
@@ -72,14 +90,43 @@ export default function LazyVideo({
       }}
     >
       {visivel && (
-        <video
-          src={src}
-          controls={controls}
-          muted={!controls}
-          preload="metadata"
-          onError={onError}
-          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-        />
+        <>
+          {poster && !posterFailed && (
+            <img
+              src={poster}
+              alt=""
+              loading="lazy"
+              onError={() => setPosterFailed(true)}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          )}
+          <video
+            ref={videoRef}
+            src={src}
+            controls={controls}
+            muted={!controls}
+            playsInline
+            preload="metadata"
+            onError={onError}
+            onEnded={onEnded}
+            style={{
+              position: "relative",
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+              opacity: controls || playing || !poster || posterFailed ? 1 : 0,
+              transition: "opacity 120ms ease",
+            }}
+          />
+        </>
       )}
     </div>
   );

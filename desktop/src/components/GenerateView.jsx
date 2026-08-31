@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   libraryVideoUrl,
+  libraryThumbnailUrl,
   outputUrl,
   updateOutput,
   regenerateCaption,
@@ -361,6 +362,7 @@ function GenerationForm({
                   {libraryItem.file ? (
                     <video
                       src={libraryVideoUrl(libraryItem.file)}
+                      poster={libraryThumbnailUrl(libraryItem.id)}
                       muted
                       preload="metadata"
                     />

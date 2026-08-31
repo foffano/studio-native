@@ -10,11 +10,12 @@ import {
   updateLibraryTags,
   deleteLibraryItem,
   libraryVideoUrl,
+  libraryThumbnailUrl,
 } from "../api.js";
 import LazyVideo from "./LazyVideo.jsx";
 import SourcePanel from "./SourcePanel.jsx";
 import FolderTile from "./FolderTile.jsx";
-import { IconUpload, IconTrash, IconVideo, IconPlus, IconStar, IconRefresh } from "./Icons.jsx";
+import { IconUpload, IconTrash, IconVideo, IconPlus, IconStar, IconRefresh, IconPlay, IconPause } from "./Icons.jsx";
 
 function fmtDur(sec) {
   if (!sec) return "—";
@@ -59,11 +60,13 @@ export default function LibraryView({
   // se abre sozinho: e a unica acao possivel, e a orientacao de estado vazio e
   // justamente mostrar a acao em vez de uma tela em branco.
   const [uploadAberto, setUploadAberto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [dias, setDias] = useState(30);
   const [selecionadoId, setSelecionadoId] = useState(null);
   const [arrastando, setArrastando] = useState(null);   // id do video em movimento
   const [alvo, setAlvo] = useState(null);               // id sob o cursor
   const pollRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Na raiz ("todos"), o modelo e de gerenciador de arquivos: aparecem as
   // pastas e os videos que nao estao em nenhuma. Nas outras secoes -- favoritos,
@@ -193,17 +196,24 @@ export default function LibraryView({
 
   const uploadFiles = async (files) => {
     if (!files || !files.length) return;
+    const queue = Array.from(files);
     setBusy(true);
     setError("");
     try {
-      for (const f of files) {
-        await uploadToLibrary(f);
+      for (let index = 0; index < queue.length; index += 1) {
+        const f = queue[index];
+        setUploadProgress({ phase: "upload", fileName: f.name, index: index + 1, total: queue.length, percent: 0 });
+        await uploadToLibrary(f, (percent) =>
+          setUploadProgress({ phase: "upload", fileName: f.name, index: index + 1, total: queue.length, percent })
+        );
       }
       await refresh();
+      onMudou && onMudou();
     } catch (e) {
       setError(e.message);
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   };
 
@@ -251,6 +261,9 @@ export default function LibraryView({
   };
 
   const m = metrics || {};
+  const processingCount = items.filter(
+    (item) => item.status === "processing" || item.status === "queued"
+  ).length;
 
   return (
     <>
@@ -327,8 +340,8 @@ export default function LibraryView({
         <button
           type="button"
           className="btn btn--primary toolbar__add"
-          onClick={() => setUploadAberto((v) => !v)}
-          aria-expanded={uploadAberto || items.length === 0}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
         >
           <IconPlus width={16} height={16} />
           <span className="toolbar__add-longo">Adicionar vídeos</span>
@@ -336,8 +349,49 @@ export default function LibraryView({
         </button>
       </div>
 
+      <input
+        ref={fileInputRef}
+        id="library-upload-input"
+        type="file"
+        accept="video/*"
+        multiple
+        hidden
+        disabled={busy}
+        onChange={(e) => {
+          const selected = e.target.files;
+          uploadFiles(selected);
+          e.target.value = "";
+        }}
+      />
+
+      {(uploadProgress || processingCount > 0) && (
+        <section className="upload-status" aria-live="polite" aria-label="Progresso da importação">
+          <div className="upload-status__head">
+            <div>
+              <strong>
+                {uploadProgress
+                  ? `Enviando ${uploadProgress.index} de ${uploadProgress.total}`
+                  : processingCount === 1
+                  ? "Preparando vídeo"
+                  : `Preparando ${processingCount} vídeos`}
+              </strong>
+              <span>
+                {uploadProgress
+                  ? uploadProgress.fileName
+                  : "Normalizando formato, cor e rotação para a biblioteca"}
+              </span>
+            </div>
+            <b>{uploadProgress ? `${uploadProgress.percent}%` : "Em andamento"}</b>
+          </div>
+          <div className={"upload-status__track" + (!uploadProgress ? " upload-status__track--processing" : "")}>
+            <div style={uploadProgress ? { width: `${uploadProgress.percent}%` } : undefined} />
+          </div>
+        </section>
+      )}
+
       {(uploadAberto || items.length === 0) && (
         <label
+          htmlFor="library-upload-input"
           className={"drop" + (drag ? " drag" : "")}
           onDragOver={(e) => {
             e.preventDefault();
@@ -360,14 +414,6 @@ export default function LibraryView({
             ou clique para escolher (vários de uma vez). MP4, MOV, MKV — o app
             normaliza HDR, rotação e .mov de iPhone automaticamente.
           </div>
-          <input
-            type="file"
-            accept="video/*"
-            multiple
-            hidden
-            disabled={busy}
-            onChange={(e) => uploadFiles(e.target.files)}
-          />
         </label>
       )}
 
@@ -497,9 +543,17 @@ function LibraryCard({
   arrastandoSobre = false,
   ...dnd
 }) {
+  const [previewing, setPreviewing] = useState(false);
   const ready = item.status === "ready";
   const pending = item.status === "processing" || item.status === "queued";
   const url = ready && item.file ? libraryVideoUrl(item.file) : null;
+  const producedCount = Number(item.produced_count ?? item.total_outputs ?? 0);
+  const durationLabel = item.duration_sec ? fmtDur(item.duration_sec) : "";
+  const cardLabel = [
+    item.name,
+    durationLabel && `duração ${durationLabel}`,
+    `${producedCount} ${producedCount === 1 ? "vídeo gerado" : "vídeos gerados"}`,
+  ].filter(Boolean).join(", ");
 
   return (
     <div
@@ -509,17 +563,23 @@ function LibraryCard({
         (arrastandoSobre ? " vcard--alvo" : "")
       }
       draggable={arrastavel}
+      onMouseLeave={() => setPreviewing(false)}
       {...dnd}
     >
       <button
         className="vcard__abrir"
         onClick={onSelecionar}
         aria-pressed={selecionado}
-        aria-label={item.name}
+        aria-label={cardLabel}
         title={item.name}
       >
         {url ? (
-          <LazyVideo src={url} />
+          <LazyVideo
+            src={url}
+            poster={libraryThumbnailUrl(item.id)}
+            playing={previewing}
+            onEnded={() => setPreviewing(false)}
+          />
         ) : (
           <div className="vcard__placeholder">
             {pending ? <span className="spinner" /> : <IconVideo width={24} height={24} />}
@@ -539,7 +599,37 @@ function LibraryCard({
             <IconStar width={14} height={14} fill="currentColor" />
           </span>
         )}
+
+        {ready && durationLabel && (
+          <span className="vcard__badge vcard__badge--duration" aria-hidden="true">
+            {durationLabel}
+          </span>
+        )}
+
+        {ready && (
+          <span className="vcard__badge vcard__badge--produced" aria-hidden="true">
+            {producedCount} {producedCount === 1 ? "gerado" : "gerados"}
+          </span>
+        )}
       </button>
+
+      {ready && url && (
+        <button
+          type="button"
+          className={"vcard__preview" + (previewing ? " vcard__preview--playing" : "")}
+          aria-label={previewing ? `Parar prévia de ${item.name}` : `Reproduzir prévia de ${item.name}`}
+          aria-pressed={previewing}
+          title={previewing ? "Parar prévia" : "Reproduzir prévia"}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPreviewing((value) => !value);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          draggable={false}
+        >
+          {previewing ? <IconPause width={18} height={18} /> : <IconPlay width={18} height={18} />}
+        </button>
+      )}
     </div>
   );
 }

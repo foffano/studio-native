@@ -82,15 +82,43 @@ export async function getStatus(jobId) {
 }
 
 export const libraryVideoUrl = (file) => `${BACKEND}/library/${file}`;
+export const libraryThumbnailUrl = (id) => `${BACKEND}/library-thumbs/${id}.jpg`;
 
-export async function uploadToLibrary(file) {
-  const fd = new FormData();
-  fd.append("video", file);
-  const res = await req(apiUrl("/api/library/upload"), {
-    method: "POST",
-    body: fd,
+export async function uploadToLibrary(file, onProgress) {
+  // XMLHttpRequest continua sendo a API mais leve e confiável para progresso
+  // de upload no navegador. `fetch` não expõe quantos bytes do body já foram
+  // enviados, então uma barra feita com ele seria apenas uma animação falsa.
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append("video", file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", apiUrl("/api/library/upload"));
+    xhr.withCredentials = true;
+    xhr.responseType = "json";
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      const data = xhr.response || {};
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress && onProgress(100);
+        resolve(data);
+        return;
+      }
+      if (xhr.status === 401 && (data.error === "nao_autenticado" || data.error === "sem_senha")) {
+        window.dispatchEvent(new CustomEvent("studio:sem-sessao"));
+      }
+      reject(new Error(data.error || `Erro ${xhr.status}`));
+    });
+    xhr.addEventListener("error", () => reject(new Error("Falha de rede durante o upload.")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload cancelado.")));
+    xhr.send(fd);
   });
-  return jsonOrThrow(res);
 }
 
 export async function updateLibraryTags(id, tags) {
