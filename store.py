@@ -556,6 +556,12 @@ def public_account(row):
     return out
 
 
+def set_account_avatar(account_id, avatar_url):
+    """Atualiza so a foto. Ela vence sozinha, sem que a conta mude em nada."""
+    _exec("UPDATE accounts SET avatar_url = ? WHERE id = ?", (avatar_url, account_id))
+    return get_account(account_id)
+
+
 def upsert_account(
     platform,
     open_id,

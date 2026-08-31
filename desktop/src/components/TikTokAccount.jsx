@@ -145,24 +145,7 @@ export default function TikTokAccount() {
               margin: "14px 0",
             }}
           >
-            {account.avatar_url ? (
-              <img
-                src={account.avatar_url}
-                alt=""
-                width={44}
-                height={44}
-                style={{ borderRadius: "50%", objectFit: "cover" }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  background: "#1e2a3d",
-                }}
-              />
-            )}
+            <Avatar url={account.avatar_url} nome={account.nickname} />
             <div>
               <div style={{ fontWeight: 600 }}>
                 {account.nickname || "conta conectada"}
@@ -211,6 +194,62 @@ export default function TikTokAccount() {
           confiável.
         </p>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * A foto da conta, com as iniciais quando ela não carrega.
+ *
+ * O TikTok assina a URL da foto e ela **vence em cerca de um dia**. O backend
+ * renova quando percebe que venceu, mas isso não cobre tudo: a página pode
+ * ficar aberta horas, e o carimbo vira no meio. Sem isto, o que aparecia era um
+ * ícone de imagem quebrada — que se lê como "a conta caiu", quando a conta está
+ * perfeita.
+ */
+function Avatar({ url, nome }) {
+  const [falhou, setFalhou] = React.useState(false);
+
+  // Uma URL nova merece nova tentativa: sem isto, o retrato quebrado ficaria
+  // preso mesmo depois de o backend renovar a foto.
+  React.useEffect(() => setFalhou(false), [url]);
+
+  const base = {
+    width: 44,
+    height: 44,
+    borderRadius: "50%",
+    flex: "0 0 auto",
+  };
+
+  if (url && !falhou) {
+    return (
+      <img
+        src={url}
+        alt=""
+        width={44}
+        height={44}
+        style={{ ...base, objectFit: "cover" }}
+        onError={() => setFalhou(true)}
+      />
+    );
+  }
+
+  const inicial = (nome || "?").trim().charAt(0).toUpperCase();
+  return (
+    <div
+      style={{
+        ...base,
+        display: "grid",
+        placeItems: "center",
+        background: "var(--surface-3)",
+        color: "var(--text-soft)",
+        fontWeight: 700,
+        fontSize: 18,
+      }}
+      aria-hidden="true"
+    >
+      {inicial}
     </div>
   );
 }

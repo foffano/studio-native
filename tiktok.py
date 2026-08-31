@@ -524,9 +524,61 @@ def cancel_connect():
     return {"state": "ocioso"}
 
 
+# Quando a ultima tentativa de renovar a foto falhou. Sem isto, uma conta cuja
+# foto nao pode ser renovada (rede fora, escopo revogado) faria uma chamada ao
+# TikTok a cada leitura da tela de Ajustes.
+_ultima_tentativa_avatar = 0.0
+ESPERA_APOS_FALHA = 300  # 5 minutos
+
+
+def _avatar_vencido(url):
+    """A foto do TikTok vem numa URL assinada que vence -- em cerca de um dia.
+
+    O app guardava essa URL na conexao e nunca mais mexia nela, entao a foto
+    parava de aparecer no dia seguinte e parecia que a conta tinha caido. A
+    conta esta perfeita; e a URL que envelhece.
+
+    Vencido tambem quando falta pouco: a pagina pode ficar aberta por horas.
+    """
+    if not url:
+        return True
+    try:
+        consulta = urllib.parse.urlparse(url).query
+        expira = urllib.parse.parse_qs(consulta).get("x-expires", [""])[0]
+        if not expira:
+            return False  # sem carimbo, nao ha o que julgar -- deixa como esta
+        return time.time() > int(expira) - 600
+    except (ValueError, TypeError):
+        return False
+
+
 def current_account():
-    """Conta conectada, sem nenhum token dentro."""
-    return store.public_account(store.active_account("tiktok"))
+    """Conta conectada, sem nenhum token dentro.
+
+    Renova a foto quando a URL dela venceu. E de proposito que isso acontece na
+    leitura, e nao num relogio: ninguem precisa da foto enquanto ninguem olha.
+    """
+    global _ultima_tentativa_avatar
+    conta = store.active_account("tiktok")
+
+    if (
+        conta
+        and conta.get("access_token_enc")
+        and _avatar_vencido(conta.get("avatar_url"))
+        and time.time() - _ultima_tentativa_avatar > ESPERA_APOS_FALHA
+    ):
+        _ultima_tentativa_avatar = time.time()
+        try:
+            access, conta = valid_access_token()
+            info = fetch_user_info(access)
+            if info.get("avatar_url"):
+                conta = store.set_account_avatar(conta["id"], info["avatar_url"])
+        except Exception as e:  # noqa: BLE001
+            # Amplo de proposito: falha aqui nao pode derrubar a tela. Sem foto
+            # o app funciona inteiro, e dizer "conta desconectada" seria mentira.
+            print(f"[StudioNative] nao deu para renovar a foto do TikTok: {e}", flush=True)
+
+    return store.public_account(conta)
 
 
 def disconnect():
