@@ -43,7 +43,9 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
       .then((r) => {
         const items = r.accounts || (r.account ? [r.account] : []);
         setContas(items);
-        setContaId((current) => current || items[0]?.id || "");
+        setContaId((current) =>
+          items.some((item) => item.id === current) ? current : items[0]?.id || ""
+        );
       })
       .catch(() => {});
     if (publicacaoInicial && publicacaoInicial.state !== "erro") carregarLegenda();
@@ -172,6 +174,22 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
           Toque na notificação na <strong>Caixa de entrada</strong> do TikTok
           para publicar. Não aparece em Rascunhos.
         </p>
+        {contas.length > 1 && (
+          <div className="publish-account-picker">
+            <label>Reenviar para</label>
+            <select
+              className="select"
+              value={contaId}
+              onChange={(e) => setContaId(e.target.value)}
+            >
+              {contas.map((account) => (
+                <option key={account.id} value={account.id}>
+                  @{account.nickname || "conta conectada"}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             className="btn btn--ghost btn--xs"
@@ -187,17 +205,23 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
           <button
             className="btn btn--ghost btn--xs"
             onClick={() => {
+              const outraConta = contaId && contaId !== pub.account_id;
+              const destino = contaSelecionada?.nickname || "conta selecionada";
               if (
                 window.confirm(
-                  "Enviar este vídeo de novo? Se a notificação anterior chegar, " +
-                    "você verá o mesmo vídeo duas vezes na Caixa de entrada."
+                  outraConta
+                    ? `Reenviar este vídeo para @${destino}? O envio anterior continuará esperando em @${conta.nickname}.`
+                    : "Enviar este vídeo de novo? Se a notificação anterior chegar, " +
+                        "você verá o mesmo vídeo duas vezes na Caixa de entrada."
                 )
               ) {
                 enviar();
               }
             }}
           >
-            Enviar de novo
+            {contaId && contaId !== pub.account_id
+              ? `Enviar para @${contaSelecionada?.nickname || "conta selecionada"}`
+              : "Enviar de novo"}
           </button>
         </div>
         {erro && (
