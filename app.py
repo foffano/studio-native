@@ -1091,7 +1091,32 @@ def get_job(job_id):
         return dict(JOBS.get(job_id, {}))
 
 
-def generate_phrases(n, theme, extra_tags=None):
+SCRIPT_DIRECTIONS = {
+    "problem_solution": (
+        "Use a estrutura problema -> solucao: comece por uma dor reconhecivel, "
+        "aumente brevemente a tensao e apresente o produto como o caminho pratico."
+    ),
+    "ugc_testimonial": (
+        "Escreva em estilo UGC/depoimento, em primeira pessoa, espontaneo e crivel, "
+        "como uma descoberta real. Nao invente resultados, numeros ou experiencia pessoal."
+    ),
+    "curiosity_hook": (
+        "Priorize um hook agressivo e curioso que interrompa a rolagem, usando contraste, "
+        "pergunta ou informacao incompleta, sem clickbait enganoso nem alegacoes falsas."
+    ),
+    "benefit_demo": (
+        "Foque beneficio e demonstracao: mostre o produto em uso, traduza caracteristicas "
+        "em ganho concreto e ajude o publico a visualizar o antes e depois sem promessas absolutas."
+    ),
+}
+
+
+def _direction_instruction(direction):
+    instruction = SCRIPT_DIRECTIONS.get(direction)
+    return f"\nDirecionamento obrigatorio deste lote: {instruction}\n" if instruction else ""
+
+
+def generate_phrases(n, theme, extra_tags=None, direction=None):
     """Chama a OpenRouter SOMENTE com texto e retorna n itens prontos para o post.
 
     Cada item traz a frase da tela, a legenda do post e as hashtags - tudo na
@@ -1117,7 +1142,7 @@ def generate_phrases(n, theme, extra_tags=None):
     )
 
     user_prompt = (
-        f"{theme_part}\n\n"
+        f"{theme_part}\n{_direction_instruction(direction)}\n"
         f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         '- "overlay": a frase que fica NA TELA do video, no maximo 120 caracteres '
         "(pode usar 1 ou 2 emojis);\n"
@@ -1260,7 +1285,7 @@ def speech_word_count(text):
     return len(re.findall(r"\b[\wÀ-ÿ]+\b", str(text or ""), re.UNICODE))
 
 
-def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None):
+def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direction=None):
     """Gera n itens coerentes (overlay na tela + narracao + legenda do post),
     usando tecnicas de videos virais de TikTok e respeitando o limite de
     palavras compativel com a duracao do video. So texto vai para a IA."""
@@ -1285,7 +1310,7 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None):
     )
 
     user_prompt = (
-        f"{theme_part}\n\n"
+        f"{theme_part}\n{_direction_instruction(direction)}\n"
         f"O video tem {video_duration:.1f} segundos e a narracao precisa ocupar praticamente todo esse tempo.\n"
         f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         "- \"overlay\": frase curta e impactante para FICAR NA TELA do video "
@@ -1543,7 +1568,7 @@ def render_video(src_path, text, out_path, options, audio_path=None):
 
 
 def process_job(job_id, src_path, num, theme, options, audio_opts=None,
-                library_id=None, source_name=""):
+                library_id=None, source_name="", script_directions=None):
     owns_src = bool(src_path)
     owns_norm = library_id is None
     norm_path = None
@@ -1592,9 +1617,13 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
                 message="Gerando roteiro, narracao e legenda com a IA...",
             )
             audio_theme = audio_opts.get("theme") or theme
-            items = generate_overlay_and_speech(
-                num, audio_theme, video_dur, extra_tags=extra_tags
-            )
+            batches = script_directions or [{"type": None, "count": num}]
+            items = []
+            for batch in batches:
+                items.extend(generate_overlay_and_speech(
+                    batch["count"], audio_theme, video_dur,
+                    extra_tags=extra_tags, direction=batch["type"]
+                ))
 
             results = []
             total = len(items)
@@ -1657,7 +1686,13 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
                 status="generating_text",
                 message="Gerando frases e legendas com a IA...",
             )
-            phrases = generate_phrases(num, theme, extra_tags=extra_tags)
+            batches = script_directions or [{"type": None, "count": num}]
+            phrases = []
+            for batch in batches:
+                phrases.extend(generate_phrases(
+                    batch["count"], theme, extra_tags=extra_tags,
+                    direction=batch["type"]
+                ))
 
             results = []
             total = len(phrases)
@@ -1760,6 +1795,26 @@ def api_generate():
         num = 1
     num = max(1, min(num, 10))
 
+    script_directions = []
+    raw_directions = request.form.get("script_directions", "").strip()
+    if raw_directions:
+        try:
+            parsed_directions = json.loads(raw_directions)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Direcionamentos de roteiro invalidos."}), 400
+        if not isinstance(parsed_directions, list):
+            return jsonify({"error": "Direcionamentos de roteiro invalidos."}), 400
+        for entry in parsed_directions:
+            if not isinstance(entry, dict) or entry.get("type") not in SCRIPT_DIRECTIONS:
+                return jsonify({"error": "Tipo de roteiro direcionado invalido."}), 400
+            try:
+                count = int(entry.get("count", 1))
+            except (TypeError, ValueError):
+                count = 1
+            script_directions.append({"type": entry["type"], "count": max(1, min(count, 10))})
+        if script_directions:
+            num = sum(x["count"] for x in script_directions)
+
     theme = request.form.get("theme", "").strip()
 
     try:
@@ -1854,7 +1909,11 @@ def api_generate():
     thread = threading.Thread(
         target=process_job,
         args=(job_id, src_path, num, theme, options, audio_opts),
-        kwargs={"library_id": library_id or None, "source_name": source_name},
+        kwargs={
+            "library_id": library_id or None,
+            "source_name": source_name,
+            "script_directions": script_directions,
+        },
         daemon=True,
     )
     thread.start()
@@ -2403,7 +2462,7 @@ def process_publication(pub_id):
     tamanho = caminho.stat().st_size
 
     try:
-        token, conta = tiktok.valid_access_token()
+        token, conta = tiktok.valid_access_token(pub.get("account_id"))
     except tiktok.TikTokError as e:
         return _publish_fail(pub_id, e)
 
@@ -2482,7 +2541,7 @@ def _sincronizar_publicacao(pub, token=None):
         return pub
     try:
         if token is None:
-            token, _ = tiktok.valid_access_token()
+            token, _ = tiktok.valid_access_token(pub.get("account_id"))
         info = tiktok.publish_status(token, pub["publish_id"])
     except tiktok.TikTokError:
         # Consultar e melhor-esforco: uma conta trocada ou rede fora nao pode
@@ -2515,12 +2574,7 @@ def api_publications_refresh():
     if not pendentes:
         return jsonify({"atualizadas": 0, "items": []})
 
-    try:
-        token, _ = tiktok.valid_access_token()
-    except tiktok.TikTokError as e:
-        return jsonify({"error": str(e)}), 400
-
-    itens = [_publication_view(_sincronizar_publicacao(p, token)) for p in pendentes]
+    itens = [_publication_view(_sincronizar_publicacao(p)) for p in pendentes]
     return jsonify({"atualizadas": len(itens), "items": itens})
 
 
@@ -2554,6 +2608,7 @@ def _publication_view(pub):
         return None
     out = dict(pub)
     out["progresso"] = PUBLISH_PROGRESS.get(pub["id"])
+    out["account"] = store.public_account(store.get_account(pub.get("account_id")))
     return out
 
 
@@ -2563,9 +2618,13 @@ def api_output_publish(output_id):
     if not output:
         return jsonify({"error": "Video nao encontrado"}), 404
 
-    conta = store.active_account("tiktok")
+    data = request.get_json(silent=True) or {}
+    account_id = str(data.get("account_id") or "").strip()
+    conta = store.get_account(account_id) if account_id else store.active_account("tiktok")
+    if conta and (conta.get("platform") != "tiktok" or not conta.get("access_token_enc")):
+        conta = None
     if not conta:
-        return jsonify({"error": "Conecte a conta do TikTok em Ajustes."}), 400
+        return jsonify({"error": "Selecione uma conta do TikTok conectada."}), 400
 
     # Enviar de novo enquanto o anterior ainda esta em transito duplicaria o
     # video no TikTok sem que o usuario visse o primeiro chegar. Ja reenviar um
@@ -2575,7 +2634,6 @@ def api_output_publish(output_id):
         if p["output_id"] == output_id and p["state"] in store.PENDING_STATES:
             return jsonify({"error": "Este video ja esta sendo enviado."}), 409
 
-    data = request.get_json(silent=True) or {}
     pub = store.add_publication(
         output_id=output_id,
         account_id=conta["id"],
@@ -2613,9 +2671,14 @@ def api_publication_get(pub_id):
 
 @app.route("/api/tiktok/account", methods=["GET"])
 def api_tiktok_account():
+    accounts = [
+        store.public_account(a) for a in store.list_accounts("tiktok")
+        if a.get("access_token_enc")
+    ]
     return jsonify(
         {
-            "account": tiktok.current_account(),
+            "account": accounts[0] if accounts else None,
+            "accounts": accounts,
             "cifra_do_sistema": secretbox.is_real_encryption(),
         }
     )
@@ -2624,6 +2687,14 @@ def api_tiktok_account():
 @app.route("/api/tiktok/account", methods=["DELETE"])
 def api_tiktok_disconnect():
     return jsonify({"account": None, "removida": tiktok.disconnect()})
+
+
+@app.route("/api/tiktok/accounts/<account_id>", methods=["DELETE"])
+def api_tiktok_disconnect_account(account_id):
+    conta = store.get_account(account_id)
+    if not conta or conta.get("platform") != "tiktok":
+        return jsonify({"error": "Conta do TikTok nao encontrada."}), 404
+    return jsonify({"removida": store.public_account(store.delete_account(account_id))})
 
 
 @app.route("/api/tiktok/connect", methods=["POST"])

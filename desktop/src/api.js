@@ -215,8 +215,11 @@ export async function cancelTikTokConnect() {
   return jsonOrThrow(res);
 }
 
-export async function disconnectTikTok() {
-  const res = await req(apiUrl("/api/tiktok/account"), { method: "DELETE" });
+export async function disconnectTikTok(accountId = "") {
+  const path = accountId
+    ? `/api/tiktok/accounts/${encodeURIComponent(accountId)}`
+    : "/api/tiktok/account";
+  const res = await req(apiUrl(path), { method: "DELETE" });
   return jsonOrThrow(res);
 }
 

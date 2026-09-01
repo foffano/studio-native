@@ -588,14 +588,16 @@ def disconnect():
     return store.public_account(store.delete_account(conta["id"]))
 
 
-def valid_access_token():
+def valid_access_token(account_id=None):
     """Access token utilizavel, renovando quando esta perto de vencer.
 
     Quem for publicar chama isto, nunca o banco direto: o token de 24h expira
     no meio de uma sessao de trabalho normal, e sem a renovacao automatica o
     usuario levaria "faca login de novo" no meio de um envio.
     """
-    conta = store.active_account("tiktok")
+    conta = store.get_account(account_id) if account_id else store.active_account("tiktok")
+    if conta and conta.get("platform") != "tiktok":
+        conta = None
     if not conta:
         raise TikTokError("Nenhuma conta do TikTok conectada.")
 

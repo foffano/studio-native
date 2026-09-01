@@ -26,7 +26,8 @@ function textoDoPost(output) {
 }
 
 export default function PublishToTikTok({ outputId, publicacaoInicial = null }) {
-  const [conta, setConta] = useState(null);
+  const [contas, setContas] = useState([]);
+  const [contaId, setContaId] = useState("");
   // Sem isto, um vídeo enviado numa sessão anterior voltaria a mostrar o botão
   // "Enviar", como se nunca tivesse saído daqui.
   const [pub, setPub] = useState(publicacaoInicial);
@@ -37,8 +38,13 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
   const poll = useRef(null);
 
   useEffect(() => {
+    if (publicacaoInicial?.account_id) setContaId(publicacaoInicial.account_id);
     getTikTokAccount()
-      .then((r) => setConta(r.account || null))
+      .then((r) => {
+        const items = r.accounts || (r.account ? [r.account] : []);
+        setContas(items);
+        setContaId((current) => current || items[0]?.id || "");
+      })
       .catch(() => {});
     if (publicacaoInicial && publicacaoInicial.state !== "erro") carregarLegenda();
     return () => poll.current && clearInterval(poll.current);
@@ -71,7 +77,7 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
   async function enviar() {
     setErro("");
     try {
-      const p = await publishOutput(outputId);
+      const p = await publishOutput(outputId, { account_id: contaId });
       setPub(p);
       acompanhar(p.id);
     } catch (e) {
@@ -102,6 +108,9 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
       setErro("Não foi possível copiar. Selecione o texto e copie à mão.");
     }
   }
+
+  const contaSelecionada = contas.find((item) => item.id === contaId) || contas[0];
+  const conta = pub?.account || contaSelecionada;
 
   if (!conta) {
     return (
@@ -226,6 +235,23 @@ export default function PublishToTikTok({ outputId, publicacaoInicial = null }) 
 
   return (
     <>
+      {contas.length > 1 && (
+        <div className="publish-account-picker">
+          <label>Enviar para</label>
+          <select
+            className="select"
+            value={contaId}
+            disabled={!!estado && estado !== "erro"}
+            onChange={(e) => setContaId(e.target.value)}
+          >
+            {contas.map((account) => (
+              <option key={account.id} value={account.id}>
+                @{account.nickname || "conta conectada"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <button className="btn btn--ghost btn--block" onClick={enviar}>
         {estado === "erro" ? "Tentar de novo" : `Enviar para o TikTok de @${conta.nickname}`}
       </button>

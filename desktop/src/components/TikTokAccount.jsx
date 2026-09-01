@@ -14,7 +14,7 @@ import {
 const POLL_MS = 2000;
 
 export default function TikTokAccount() {
-  const [account, setAccount] = useState(null);
+  const [accounts, setAccounts] = useState([]);
   const [cifraDoSistema, setCifraDoSistema] = useState(true);
   const [fase, setFase] = useState("carregando"); // carregando | pronto | aguardando
   const [erro, setErro] = useState("");
@@ -31,7 +31,7 @@ export default function TikTokAccount() {
   const carregar = async () => {
     try {
       const r = await getTikTokAccount();
-      setAccount(r.account || null);
+      setAccounts(r.accounts || (r.account ? [r.account] : []));
       setCifraDoSistema(r.cifra_do_sistema !== false);
       setFase("pronto");
     } catch (e) {
@@ -63,8 +63,7 @@ export default function TikTokAccount() {
         setRestante(s.expira_em || 0);
         if (s.state === "conectado") {
           pararPoll();
-          setAccount(s.account || null);
-          setFase("pronto");
+          await carregar();
           setErro("");
         } else if (s.state === "erro") {
           pararPoll();
@@ -109,15 +108,15 @@ export default function TikTokAccount() {
     setFase("pronto");
   }
 
-  async function desconectar() {
+  async function desconectar(account) {
     const nome = account?.nickname ? `@${account.nickname}` : "esta conta";
     if (!window.confirm(`Desconectar ${nome}? Os tokens salvos serão apagados.`)) {
       return;
     }
     setErro("");
     try {
-      await disconnectTikTok();
-      setAccount(null);
+      await disconnectTikTok(account.id);
+      setAccounts((items) => items.filter((item) => item.id !== account.id));
     } catch (e) {
       setErro(e.message);
     }
@@ -135,34 +134,37 @@ export default function TikTokAccount() {
 
       {fase === "carregando" && <p className="muted">Verificando...</p>}
 
-      {fase === "pronto" && account && (
+      {fase === "pronto" && accounts.length > 0 && (
         <>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              margin: "14px 0",
-            }}
-          >
-            <Avatar url={account.avatar_url} nome={account.nickname} />
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                {account.nickname || "conta conectada"}
+          <div className="tiktok-accounts">
+            {accounts.map((account) => (
+              <div className="tiktok-account-row" key={account.id}>
+                <Avatar url={account.avatar_url} nome={account.nickname} />
+                <div className="tiktok-account-row__info">
+                  <div style={{ fontWeight: 600 }}>
+                    @{account.nickname || "conta conectada"}
+                  </div>
+                  <div className="muted" style={{ fontSize: "var(--text-sm)" }}>
+                    {(account.scopes || "").split(",").filter(Boolean).join(" · ") ||
+                      "sem escopos declarados"}
+                  </div>
+                </div>
+                <button
+                  className="btn btn--ghost btn--xs"
+                  onClick={() => desconectar(account)}
+                >
+                  Desconectar
+                </button>
               </div>
-              <div className="muted" style={{ fontSize: "var(--text-sm)" }}>
-                {(account.scopes || "").split(",").filter(Boolean).join(" · ") ||
-                  "sem escopos declarados"}
-              </div>
-            </div>
+            ))}
           </div>
-          <button className="btn btn--ghost" onClick={desconectar}>
-            Desconectar
+          <button className="btn btn--primary" onClick={conectar}>
+            Adicionar outra conta
           </button>
         </>
       )}
 
-      {fase === "pronto" && !account && (
+      {fase === "pronto" && accounts.length === 0 && (
         <button className="btn btn--primary" onClick={conectar}>
           Conectar TikTok
         </button>

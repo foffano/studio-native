@@ -2413,6 +2413,118 @@ input[type="range"] {
   backdrop-filter: blur(4px);
 }
 
+/* ---------- Direcionamento de roteiros ---------- */
+.script-direction-field {
+  margin-top: 18px;
+}
+.script-direction-intro {
+  margin: -2px 0 10px;
+}
+.script-directions {
+  display: grid;
+  gap: 9px;
+}
+.script-direction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  transition: border-color 0.14s, background 0.14s;
+}
+.script-direction.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.script-direction__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.script-direction__choice input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.script-direction__choice span {
+  display: grid;
+  gap: 2px;
+}
+.script-direction__choice strong {
+  font-size: var(--text-sm);
+}
+.script-direction__choice small {
+  color: var(--text-soft);
+  line-height: 1.35;
+}
+.stepper--compact {
+  flex: 0 0 auto;
+}
+.stepper--compact button {
+  width: 32px;
+  height: 34px;
+}
+.stepper--compact input {
+  width: 38px;
+  font-size: var(--text-sm);
+}
+.script-direction__total {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+.script-direction__total strong {
+  color: var(--text);
+}
+
+/* ---------- Contas TikTok ---------- */
+.tiktok-accounts {
+  display: grid;
+  gap: 9px;
+  margin: 14px 0;
+}
+.tiktok-account-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.tiktok-account-row__info {
+  flex: 1;
+  min-width: 0;
+}
+.publish-account-picker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+}
+.publish-account-picker .select {
+  padding: 7px 9px;
+}
+@media (max-width: 520px) {
+  .script-direction {
+    align-items: flex-start;
+  }
+  .tiktok-account-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 .upload-status {
   margin: 0 0 var(--space-4);
   padding: 14px 16px;

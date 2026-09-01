@@ -22,10 +22,33 @@ import {
 } from "./Icons.jsx";
 
 const MAX_HASHTAGS = 5;
+const MAX_VARIATIONS_PER_DIRECTION = 10;
+
+const SCRIPT_DIRECTIONS = [
+  {
+    key: "problem_solution",
+    title: "Problema → solução",
+    description: "Parte da dor e apresenta o produto como saída prática.",
+  },
+  {
+    key: "ugc_testimonial",
+    title: "UGC / depoimento",
+    description: "Relato espontâneo, pessoal e crível, sem inventar resultados.",
+  },
+  {
+    key: "curiosity_hook",
+    title: "Hook curioso",
+    description: "Abertura mais forte para interromper a rolagem.",
+  },
+  {
+    key: "benefit_demo",
+    title: "Benefício / demonstração",
+    description: "Mostra o uso e transforma recurso em ganho concreto.",
+  },
+];
 
 const DEFAULTS = {
   theme: "",
-  num: 1,
   vertical: 0.5,
   color: "#ffffff",
   strokeColor: "#000000",
@@ -67,6 +90,10 @@ function metaChips(meta) {
   if (meta.theme) chips.push("Tema: " + meta.theme);
   if (meta.audioEnabled && meta.audioTheme)
     chips.push("Narração: " + meta.audioTheme);
+  if (meta.scriptDirections?.length)
+    chips.push(
+      "Roteiros: " + meta.scriptDirections.map((d) => `${d.label} (${d.count})`).join(", ")
+    );
   chips.push("Altura: " + Math.round((meta.vertical ?? 0.5) * 100) + "%");
   chips.push("Fonte: " + meta.fontSize);
   return chips;
@@ -225,6 +252,7 @@ function GenerationForm({
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [voiceSel, setVoiceSel] = useState("");
   const [audioTheme, setAudioTheme] = useState("");
+  const [directions, setDirections] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -245,12 +273,28 @@ function GenerationForm({
   }, [libraryPick]);
 
   const hasSource = !!libraryItem;
-  const clampNum = (v) => Math.max(1, Math.min(10, parseInt(v) || 1));
+  const selectedDirections = SCRIPT_DIRECTIONS.filter((d) => directions[d.key]);
+  const directedTotal = selectedDirections.reduce(
+    (sum, d) => sum + directions[d.key],
+    0
+  );
+  const totalVideos = directedTotal;
+  const setDirectionCount = (key, value) => {
+    const next = Math.max(
+      1,
+      Math.min(MAX_VARIATIONS_PER_DIRECTION, parseInt(value) || 1)
+    );
+    setDirections((all) => ({ ...all, [key]: next }));
+  };
 
   async function start() {
     setError("");
     if (!hasSource) {
       setError("Escolha um vídeo na Biblioteca para produzir.");
+      return;
+    }
+    if (!selectedDirections.length) {
+      setError("Selecione pelo menos um direcionamento de roteiro.");
       return;
     }
 
@@ -289,7 +333,15 @@ function GenerationForm({
       fromLibrary: true,
       theme: opts.theme.trim(),
       vertical: opts.vertical,
-      num: clampNum(opts.num),
+      // Mantem o campo principal coerente com o total exibido. Alem de alimentar
+      // o progresso da sessao, isto evita que um backend ainda em reinicializacao
+      // interprete uma geracao direcionada como apenas 1 variacao livre.
+      num: totalVideos,
+      scriptDirections: selectedDirections.map((d) => ({
+        type: d.key,
+        label: d.title,
+        count: directions[d.key],
+      })),
       fontSize: opts.fontSize,
       strokeWidth: opts.strokeWidth,
       lineSpacing: opts.lineSpacing,
@@ -308,6 +360,12 @@ function GenerationForm({
     fd.append("library_id", libraryItem.id);
     fd.append("theme", meta.theme);
     fd.append("num_variations", String(meta.num));
+    if (meta.scriptDirections.length) {
+      fd.append(
+        "script_directions",
+        JSON.stringify(meta.scriptDirections.map(({ type, count }) => ({ type, count })))
+      );
+    }
     fd.append("font_size", String(meta.fontSize));
     fd.append("color", meta.color);
     fd.append("stroke_color", meta.strokeColor);
@@ -403,36 +461,79 @@ function GenerationForm({
               />
             </div>
 
-            <div className="grid2">
-              <div className="field">
-                <label className="field__label">Número de variações</label>
-                <div className="stepper">
-                  <button
-                    disabled={busy}
-                    onClick={() => set({ num: clampNum(opts.num - 1) })}
-                  >
-                    <IconMinus width={16} height={16} />
-                  </button>
-                  <input
-                    value={opts.num}
-                    disabled={busy}
-                    onChange={(e) => set({ num: e.target.value })}
-                    onBlur={(e) => set({ num: clampNum(e.target.value) })}
-                  />
-                  <button
-                    disabled={busy}
-                    onClick={() => set({ num: clampNum(opts.num + 1) })}
-                  >
-                    <IconPlus width={16} height={16} />
-                  </button>
-                </div>
+            <div className="field">
+              <label className="field__label">Altura da frase</label>
+              <HeightPicker
+                value={opts.vertical}
+                onChange={(v) => set({ vertical: v })}
+              />
+            </div>
+
+            <div className="field script-direction-field">
+              <label className="field__label">Direcionamento dos roteiros</label>
+              <p className="field__hint script-direction-intro">
+                Selecione um ou mais formatos e defina quantas variações de cada um.
+              </p>
+              <div className="script-directions">
+                {SCRIPT_DIRECTIONS.map((direction) => {
+                  const checked = !!directions[direction.key];
+                  return (
+                    <div
+                      className={"script-direction" + (checked ? " is-selected" : "")}
+                      key={direction.key}
+                    >
+                      <label className="script-direction__choice">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={busy}
+                          onChange={(e) =>
+                            setDirections((all) => {
+                              const next = { ...all };
+                              if (e.target.checked) next[direction.key] = 1;
+                              else delete next[direction.key];
+                              return next;
+                            })
+                          }
+                        />
+                        <span>
+                          <strong>{direction.title}</strong>
+                          <small>{direction.description}</small>
+                        </span>
+                      </label>
+                      {checked && (
+                        <div className="stepper stepper--compact">
+                          <button
+                            type="button"
+                            disabled={busy || directions[direction.key] <= 1}
+                            onClick={() => setDirectionCount(direction.key, directions[direction.key] - 1)}
+                          >
+                            <IconMinus width={14} height={14} />
+                          </button>
+                          <input
+                            aria-label={`Variações de ${direction.title}`}
+                            value={directions[direction.key]}
+                            disabled={busy}
+                            onChange={(e) => setDirectionCount(direction.key, e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              busy ||
+                              directions[direction.key] >= MAX_VARIATIONS_PER_DIRECTION
+                            }
+                            onClick={() => setDirectionCount(direction.key, directions[direction.key] + 1)}
+                          >
+                            <IconPlus width={14} height={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="field">
-                <label className="field__label">Altura da frase</label>
-                <HeightPicker
-                  value={opts.vertical}
-                  onChange={(v) => set({ vertical: v })}
-                />
+              <div className="script-direction__total">
+                Total desta geração: <strong>{totalVideos} {totalVideos === 1 ? "vídeo" : "vídeos"}</strong>
               </div>
             </div>
           </div>
@@ -563,10 +664,14 @@ function GenerationForm({
           <div className={"card" + (busy ? " card--generating" : "")}>
             <button
               className={"btn btn--primary btn--block" + (busy ? " btn--pulse" : "")}
-              disabled={busy}
+              disabled={busy || totalVideos === 0}
               onClick={start}
             >
-              {busy ? "Iniciando..." : "Gerar vídeos"}
+              {busy
+                ? "Iniciando..."
+                : totalVideos
+                  ? `Gerar ${totalVideos} ${totalVideos === 1 ? "vídeo" : "vídeos"}`
+                  : "Selecione um roteiro"}
             </button>
           </div>
         </div>
