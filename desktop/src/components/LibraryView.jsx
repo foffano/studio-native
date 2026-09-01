@@ -85,6 +85,10 @@ export default function LibraryView({
     if (!termo) return true;
     return [i.name, ...(i.tags || [])].join(" ").toLowerCase().includes(termo);
   });
+  // Na raiz, pastas tambem sao conteudo da grade. Se o ultimo video solto for
+  // enviado para a lixeira, `visiveis` fica vazio, mas as pastas continuam
+  // existindo e nao podem ser substituidas pelo estado "nenhum video".
+  const temPastasVisiveis = naRaiz && pastas.length > 0;
 
   const naLixeira = secao === "lixeira";
 
@@ -417,12 +421,12 @@ export default function LibraryView({
         </label>
       )}
 
-      {items.length === 0 ? (
+      {items.length === 0 && !temPastasVisiveis ? (
         <div className="empty">
           Nenhum vídeo na biblioteca. Adicione arquivos acima — é daqui que toda
           produção começa.
         </div>
-      ) : visiveis.length === 0 ? (
+      ) : visiveis.length === 0 && !temPastasVisiveis ? (
         <div className="empty">
           Nenhum vídeo com esse nome ou tag.{" "}
           <button

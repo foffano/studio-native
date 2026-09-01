@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import random
 import re
@@ -77,6 +78,7 @@ USER_DATA_DIR = user_data_dir()
 CONFIG_PATH = USER_DATA_DIR / "config.json"
 UPLOAD_DIR = USER_DATA_DIR / "uploads"
 OUTPUT_DIR = USER_DATA_DIR / "outputs"
+TTS_CACHE_DIR = USER_DATA_DIR / "tts_cache"
 
 # Front construido (Vite). Empacotado como "webui" no bundle; em dev fica em
 # desktop/dist. E por aqui que o app inteiro e servido.
@@ -90,6 +92,7 @@ LIBRARY_META_PATH = USER_DATA_DIR / "library.json"
 STUDIO_DB_PATH = USER_DATA_DIR / "studio.db"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_STAGING.mkdir(parents=True, exist_ok=True)
@@ -313,6 +316,11 @@ PUBLICAS = {
     "/api/auth/login",
     "/api/auth/setup",
     "/favicon.ico",
+    "/favicon.png",
+    "/manifest.webmanifest",
+    "/icon-192.png",
+    "/icon-512.png",
+    "/apple-touch-icon.png",
     "/",                    # a casca do front, para a tela de login existir
 }
 
@@ -762,6 +770,13 @@ if FFMPEG_BIN not in ("ffmpeg", "ffmpeg.exe") and Path(FFMPEG_BIN).exists():
 # Limite de altura final (acelera a renderizacao) agora vem de MAX_HEIGHT (settings).
 
 
+def _subprocess_window_kwargs():
+    """Impede que ferramentas de linha de comando pisquem uma janela no Windows."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def _ffprobe_video_info(path):
     """Retorna info de cor/pix_fmt do primeiro stream de video (ou {})."""
     try:
@@ -778,6 +793,7 @@ def _ffprobe_video_info(path):
             capture_output=True,
             text=True,
             timeout=60,
+            **_subprocess_window_kwargs(),
         )
         data = json.loads(proc.stdout or "{}")
         streams = data.get("streams") or []
@@ -798,7 +814,12 @@ def _is_hdr(info):
 
 
 def _run_ffmpeg(cmd):
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        **_subprocess_window_kwargs(),
+    )
     return proc.returncode, (proc.stderr or "")[-800:]
 
 
@@ -1241,6 +1262,7 @@ def media_duration(path):
             capture_output=True,
             text=True,
             timeout=60,
+            **_subprocess_window_kwargs(),
         )
         return float((proc.stdout or "").strip())
     except Exception:  # noqa: BLE001
@@ -1428,15 +1450,74 @@ def elevenlabs_tts(text, voice_id, model_id, stability, similarity, out_path):
             "similarity_boost": similarity,
         },
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=180)
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Erro da ElevenLabs ({resp.status_code}): {resp.text[:300]}"
-        )
-    with open(out_path, "wb") as f:
-        f.write(resp.content)
-    if Path(out_path).stat().st_size == 0:
-        raise RuntimeError("A ElevenLabs retornou um audio vazio.")
+
+    # Cache pelo conjunto completo de parametros que altera o som. Alem de
+    # economizar creditos em uma nova tentativa do mesmo job, evita pedir de
+    # novo um audio que ja foi recebido antes de uma falha posterior no fluxo.
+    cache_data = {
+        "voice_id": voice_id,
+        "text": text,
+        **payload,
+    }
+    cache_key = hashlib.sha256(
+        json.dumps(cache_data, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    cache_path = TTS_CACHE_DIR / f"{cache_key}.mp3"
+    out_path = Path(out_path)
+    if cache_path.exists() and cache_path.stat().st_size > 0:
+        shutil.copy2(cache_path, out_path)
+        return
+
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            # Timeout de conexao curto e leitura longa: sintetizar pode demorar,
+            # mas abrir TLS nao deve ficar pendurado por minutos.
+            resp = requests.post(url, headers=headers, json=payload, timeout=(15, 240))
+
+            if resp.status_code == 200:
+                if not resp.content:
+                    raise RuntimeError("A ElevenLabs retornou um audio vazio.")
+                temp_cache = TTS_CACHE_DIR / f"{cache_key}.{uuid.uuid4().hex}.tmp"
+                temp_cache.write_bytes(resp.content)
+                temp_cache.replace(cache_path)
+                shutil.copy2(cache_path, out_path)
+                return
+
+            # 429 e 5xx sao transitorios segundo a documentacao da ElevenLabs.
+            if resp.status_code == 429 or 500 <= resp.status_code < 600:
+                last_error = RuntimeError(
+                    f"ElevenLabs temporariamente indisponivel ({resp.status_code})."
+                )
+                if attempt < 3:
+                    retry_after = resp.headers.get("Retry-After", "")
+                    try:
+                        wait = min(15.0, max(1.0, float(retry_after)))
+                    except (TypeError, ValueError):
+                        wait = (1.5, 4.0)[attempt - 1] + random.uniform(0, 0.5)
+                    time.sleep(wait)
+                    continue
+
+            # 401/403/422 e outros 4xx precisam de correcao, nao de repeticao.
+            raise RuntimeError(
+                f"Erro da ElevenLabs ({resp.status_code}): {resp.text[:300]}"
+            )
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as exc:
+            last_error = exc
+            if attempt < 3:
+                time.sleep((1.5, 4.0)[attempt - 1] + random.uniform(0, 0.5))
+                continue
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            break
+
+    raise RuntimeError(
+        "Nao foi possivel conectar a ElevenLabs depois de 3 tentativas. "
+        "A conexao segura foi interrompida ou o servico esta temporariamente "
+        f"indisponivel. Tente gerar novamente. Detalhe: {last_error}"
+    )
 
 
 def compute_position(video_w, video_h, txt_w, txt_h, vertical, jitter=True):
@@ -2404,6 +2485,16 @@ def web_favicon():
     if not caminho.exists():
         return ("", 204)
     return send_from_directory(WEB_DIR, "favicon.ico")
+
+
+@app.route("/manifest.webmanifest")
+@app.route("/favicon.png")
+@app.route("/icon-192.png")
+@app.route("/icon-512.png")
+@app.route("/apple-touch-icon.png")
+def web_app_assets():
+    """Arquivos usados pelo navegador ao instalar o app na tela inicial."""
+    return send_from_directory(WEB_DIR, request.path.lstrip("/"))
 
 
 # ---------------------------------------------------------------------------
