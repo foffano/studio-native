@@ -1,0 +1,25 @@
+# Backup do Studio Native, disparado por studio-native-backup.timer.
+# Gerado em /etc/systemd/system por tools/instalar-vps.sh (troca o caminho).
+
+[Unit]
+Description=Backup do Studio Native
+After=studio-native.service
+
+[Service]
+Type=oneshot
+# Roda como o dono dos dados de proposito: a copia do SQLite abre o banco, e um
+# processo root criaria arquivos -wal/-shm que o app nao conseguiria mais abrir.
+User=studio
+Group=studio
+EnvironmentFile=/etc/studio-native/studio-native.env
+# Opcional: RCLONE_REMOTE=meuremoto:studio-native, para mandar tudo para fora.
+EnvironmentFile=-/etc/studio-native/backup.env
+ExecStart=/opt/studio-native/tools/backup.sh
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/studio-native /var/backups/studio-native

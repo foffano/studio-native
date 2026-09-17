@@ -15,7 +15,8 @@ const POLL_MS = 2000;
 
 export default function TikTokAccount() {
   const [accounts, setAccounts] = useState([]);
-  const [cifraDoSistema, setCifraDoSistema] = useState(true);
+  // dpapi | aes | aes_chave_local | xor — ver secretbox.protection()
+  const [protecao, setProtecao] = useState("aes");
   const [fase, setFase] = useState("carregando"); // carregando | pronto | aguardando
   const [erro, setErro] = useState("");
   const [restante, setRestante] = useState(0);
@@ -32,7 +33,9 @@ export default function TikTokAccount() {
     try {
       const r = await getTikTokAccount();
       setAccounts(r.accounts || (r.account ? [r.account] : []));
-      setCifraDoSistema(r.cifra_do_sistema !== false);
+      setProtecao(
+        r.protecao_dos_tokens || (r.cifra_do_sistema === false ? "xor" : "aes")
+      );
       setFase("pronto");
     } catch (e) {
       setErro(e.message);
@@ -128,8 +131,8 @@ export default function TikTokAccount() {
       <p className="card__hint">
         Conecte a conta para enviar os vídeos gerados direto ao TikTok. Eles
         chegam na Caixa de entrada do app, onde você revisa e publica. O arquivo
-        vai do seu computador para o TikTok — nenhum vídeo passa por servidor
-        nosso.
+        sai da máquina onde o Studio Native roda direto para o TikTok — nenhum
+        vídeo passa por servidor intermediário.
       </p>
 
       {fase === "carregando" && <p className="muted">Verificando...</p>}
@@ -189,11 +192,19 @@ export default function TikTokAccount() {
         <p style={{ color: "#f87171", marginTop: 12 }}>{erro}</p>
       )}
 
-      {!cifraDoSistema && (
+      {protecao === "aes_chave_local" && (
         <p className="card__hint" style={{ marginTop: 12 }}>
-          Neste sistema os tokens ficam apenas ofuscados, não cifrados — a
-          proteção do Windows (DPAPI) não existe aqui. Trate esta máquina como
-          confiável.
+          Os tokens estão cifrados, mas a chave fica na mesma pasta dos dados —
+          um backup dessa pasta leva as duas coisas juntas. Num servidor,
+          configure a chave fora dela (veja docs/vps-linux.md).
+        </p>
+      )}
+
+      {protecao === "xor" && (
+        <p className="card__hint" style={{ marginTop: 12 }}>
+          Nesta máquina os tokens ficam apenas ofuscados, não cifrados: falta o
+          pacote cryptography do Python. Instale as dependências de novo
+          (pip install -r requirements.txt) e reinicie o Studio Native.
         </p>
       )}
     </div>

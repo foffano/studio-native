@@ -6,10 +6,12 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import queue
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -58,17 +60,49 @@ def resource_path(rel):
 
 
 def user_data_dir():
-    """Diretorio gravavel por usuario (config, uploads, outputs)."""
-    if os.name == "nt":
-        root = os.getenv("APPDATA") or str(Path.home())
-    elif sys.platform == "darwin":
-        root = str(Path.home() / "Library" / "Application Support")
+    """Diretorio gravavel por usuario (config, uploads, outputs).
+
+    `STUDIO_DATA_DIR` manda quando existe. Num servidor os dados moram em
+    `/var/lib/studio-native`, e nao na pasta de configuracao de algum usuario --
+    que e onde o ramo do Linux abaixo os poria.
+    """
+    custom = os.getenv("STUDIO_DATA_DIR", "").strip()
+    if custom:
+        d = Path(custom).expanduser()
     else:
-        root = os.getenv("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    d = Path(root) / "StudioNative"
+        if os.name == "nt":
+            root = os.getenv("APPDATA") or str(Path.home())
+        elif sys.platform == "darwin":
+            root = str(Path.home() / "Library" / "Application Support")
+        else:
+            root = os.getenv("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+        d = Path(root) / "StudioNative"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+
+def configure_temp_dir():
+    """Manda os temporarios grandes para `STUDIO_TMP_DIR`, quando definido.
+
+    O waitress e o Werkzeug guardam o corpo das requisicoes em arquivos
+    temporarios enquanto o upload chega. Em distros onde /tmp e tmpfs (o
+    Debian 13, por exemplo), esses arquivos ocupam RAM: um video em transito
+    pesaria na memoria da VPS inteira. Numa pasta do disco, nao pesa.
+    """
+    pasta = os.getenv("STUDIO_TMP_DIR", "").strip()
+    if not pasta:
+        return None
+    d = Path(pasta).expanduser()
+    d.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(d)
+    os.environ["TMPDIR"] = str(d)
+    return d
+
+
+# Carrega .env (apenas em dev / compatibilidade) sem sobrescrever o ambiente.
+# Vem antes dos caminhos porque STUDIO_DATA_DIR e STUDIO_TMP_DIR podem estar nele.
+load_dotenv()
+configure_temp_dir()
 
 BASE_DIR = Path(__file__).resolve().parent
 RESOURCE_DIR = resource_path(".")
@@ -96,9 +130,6 @@ TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
 LIBRARY_STAGING.mkdir(parents=True, exist_ok=True)
-
-# Carrega .env (apenas em dev / compatibilidade) sem sobrescrever o ambiente.
-load_dotenv()
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
@@ -278,6 +309,26 @@ app.config.update(
 )
 
 
+def _public_url():
+    """Endereco publico fixo do app (`STUDIO_PUBLIC_URL`), ou "".
+
+    Num servidor o endereco e um so, e saber disso por configuracao e mais
+    firme do que deduzir de cada pedido. O login do TikTok usa isto para montar
+    o retorno: sem depender de cabecalho de proxy, e sem cair no loopback
+    quando alguem abre o app por um tunel SSH em 127.0.0.1 -- ai o TikTok
+    devolveria o navegador para a propria maquina de quem esta do outro lado.
+    """
+    url = os.getenv("STUDIO_PUBLIC_URL", "").strip().rstrip("/")
+    if url and not url.startswith(("https://", "http://")):
+        raise RuntimeError(
+            f"STUDIO_PUBLIC_URL precisa comecar com https:// (recebido: {url!r})"
+        )
+    return url
+
+
+PUBLIC_URL = _public_url()
+
+
 # Origens que podem falar com a API de outro endereco. O `*` que existia aqui
 # era justificado por "o servidor so escuta em 127.0.0.1" -- premissa que morre
 # no instante em que o tunel sobe. Em producao o front e servido pelo proprio
@@ -297,7 +348,7 @@ def _add_cors_headers(resp):
         resp.headers["Access-Control-Allow-Credentials"] = "true"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
         resp.headers["Access-Control-Allow-Methods"] = (
-            "GET, POST, PATCH, DELETE, OPTIONS"
+            "GET, POST, PUT, PATCH, DELETE, OPTIONS"
         )
         resp.headers["Vary"] = "Origin"
     return resp
@@ -592,17 +643,70 @@ def library_record_generation(item_id, num_outputs):
     _save_library_file()
 
 
+# ---------------------------------------------------------------------------
+# Vagas para trabalho pesado de video
+# ---------------------------------------------------------------------------
+# Fica aqui em cima, antes de qualquer fila subir: o worker da Biblioteca pode
+# comecar a trabalhar ainda durante o import, quando recover_library_on_startup
+# reenfileira o que ficou pendente.
+
+def _media_slots():
+    """Quantos trabalhos pesados de video (render, normalizacao) rodam juntos.
+
+    `STUDIO_RENDER_SLOTS` define; sem ele, metade dos nucleos. Num PC de 12
+    threads isso da 6 vagas, e na pratica nada muda. Numa VPS de 2 vCPU da 1,
+    que e o que evita tres geracoes simultaneas disputarem CPU e memoria ate
+    todas ficarem lentas -- ou o kernel matar o processo por falta de RAM.
+    """
+    try:
+        n = int(os.getenv("STUDIO_RENDER_SLOTS", "") or 0)
+    except ValueError:
+        n = 0
+    if n <= 0:
+        n = max(1, (os.cpu_count() or 2) // 2)
+    return n
+
+
+RENDER_SLOTS = _media_slots()
+_MEDIA_SEMAPHORE = threading.BoundedSemaphore(RENDER_SLOTS)
+
+
+@contextmanager
+def media_slot(on_wait=None):
+    """Segura uma vaga de trabalho pesado durante o bloco.
+
+    `on_wait` roda so quando nao ha vaga livre -- e para a interface dizer que
+    esta esperando, em vez de parecer travada no passo anterior.
+    """
+    if not _MEDIA_SEMAPHORE.acquire(blocking=False):
+        if on_wait:
+            on_wait()
+        _MEDIA_SEMAPHORE.acquire()
+    try:
+        yield
+    finally:
+        _MEDIA_SEMAPHORE.release()
+
+
 def preprocess_library_item(item_id, src_path):
     dst_path = LIBRARY_DIR / f"{item_id}.mp4"
     try:
-        set_library_item(
-            item_id,
-            status="processing",
-            message="Normalizando video (ffmpeg)...",
-            error="",
-        )
-        normalize_video(src_path, dst_path)
-        create_library_thumbnail(dst_path, item_id)
+        with media_slot(
+            lambda: set_library_item(
+                item_id,
+                status="queued",
+                message="Aguardando outro video terminar de processar...",
+                error="",
+            )
+        ):
+            set_library_item(
+                item_id,
+                status="processing",
+                message="Normalizando video (ffmpeg)...",
+                error="",
+            )
+            normalize_video(src_path, dst_path)
+            create_library_thumbnail(dst_path, item_id)
         dur = media_duration(dst_path)
         size = dst_path.stat().st_size if dst_path.exists() else 0
         set_library_item(
@@ -695,10 +799,48 @@ def recover_library_on_startup():
             )
 
 
+# Estado do upload em pedacos (as rotas ficam junto das outras da Biblioteca).
+# Mora em memoria: se o servico reiniciar no meio, o upload recomeca do zero.
+UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024
+UPLOAD_MAX_BYTES = 2 * 1024 ** 3
+UPLOAD_DISK_MARGIN = 512 * 1024 ** 2
+# Upload parado por mais que isto e abandonado, e o `.part` dele vai embora.
+UPLOAD_EXPIRY_SECONDS = 6 * 3600
+UPLOADS = {}
+UPLOADS_LOCK = threading.Lock()
+
+
+def _upload_part_path(upload_id):
+    return LIBRARY_STAGING / f"{upload_id}.part"
+
+
+def discard_orphan_uploads():
+    """No boot nenhum upload esta em andamento: todo `.part` e sobra."""
+    for parte in LIBRARY_STAGING.glob("*.part"):
+        try:
+            parte.unlink()
+        except OSError:
+            pass
+
+
+def expire_stale_uploads():
+    agora = time.time()
+    with UPLOADS_LOCK:
+        vencidos = [
+            uid for uid, up in UPLOADS.items()
+            if agora - up["touched_at"] > UPLOAD_EXPIRY_SECONDS
+        ]
+        for uid in vencidos:
+            UPLOADS.pop(uid, None)
+    for uid in vencidos:
+        _upload_part_path(uid).unlink(missing_ok=True)
+
+
 init_library()
 store.init_store(STUDIO_DB_PATH)
 secretbox.init_secretbox(USER_DATA_DIR)
 purgar_lixeira()
+discard_orphan_uploads()
 recover_library_on_startup()
 
 
@@ -994,19 +1136,91 @@ def load_text_font(size):
     return ImageFont.load_default()
 
 
+# Tamanhos em que fontes de emoji bitmap costumam vir desenhadas. A Noto Color
+# Emoji (a do Linux) so tem 109; a Apple Color Emoji tem varios. Fonte vetorial,
+# como a Segoe UI Emoji do Windows, abre em qualquer tamanho e nem chega aqui.
+_EMOJI_BITMAP_SIZES = (20, 26, 32, 40, 48, 52, 64, 72, 96, 109, 128, 136, 137, 160)
+_EMOJI_NATIVE_SIZE = {}
+
+
+def _emoji_native_size(size):
+    """Tamanho em que a fonte de emoji de fato abre, para um pedido de `size`.
+
+    Fonte bitmap so abre nos tamanhos que traz desenhados; qualquer outro da
+    `OSError: invalid pixel size`. O codigo antigo tratava isso abrindo a fonte
+    no primeiro tamanho que desse certo e desenhando ali mesmo -- e no Linux, com
+    a Noto (109px), o emoji saia com o dobro do tamanho do texto e cortado no
+    topo da imagem.
+
+    Preferimos o menor tamanho nativo que seja >= ao pedido: reduzir um desenho
+    fica nitido, ampliar borra. A resposta e guardada por tamanho pedido, para
+    nao sondar a fonte a cada frase.
+    """
+    if size in _EMOJI_NATIVE_SIZE:
+        return _EMOJI_NATIVE_SIZE[size]
+    maiores = [s for s in _EMOJI_BITMAP_SIZES if s >= size]
+    menores = [s for s in reversed(_EMOJI_BITMAP_SIZES) if s < size]
+    escolhido = None
+    for s in (size, *maiores, *menores):
+        try:
+            ImageFont.truetype(EMOJI_FONT, s)
+        except Exception:  # noqa: BLE001
+            continue
+        escolhido = s
+        break
+    _EMOJI_NATIVE_SIZE[size] = escolhido
+    return escolhido
+
+
 def load_emoji_font(size):
+    """Fonte de emoji e a escala para desenha-la no tamanho pedido.
+
+    Devolve `(fonte, escala)`. Escala 1.0 significa que a fonte abriu no tamanho
+    pedido e desenha direto. Outra escala significa fonte bitmap aberta no
+    tamanho nativo: o desenho precisa ser redimensionado antes de ir para a
+    imagem (ver `_paste_scaled_emoji`).
+    """
     if not EMOJI_FONT:
-        return None
+        return None, 1.0
+    nativo = _emoji_native_size(size)
+    if nativo is None:
+        return None, 1.0
     try:
-        return ImageFont.truetype(EMOJI_FONT, size)
+        return ImageFont.truetype(EMOJI_FONT, nativo), size / nativo
     except Exception:  # noqa: BLE001
-        # Algumas fontes de emoji sao bitmap e so aceitam tamanhos fixos.
-        for s in (size, 109, 137, 96):
-            try:
-                return ImageFont.truetype(EMOJI_FONT, s)
-            except Exception:  # noqa: BLE001
-                continue
-    return None
+        return None, 1.0
+
+
+def _paste_scaled_emoji(img, run, emoji_font, scale, x, baseline_y):
+    """Desenha um trecho de emoji de fonte bitmap no tamanho do texto.
+
+    O trecho e desenhado a parte, no tamanho nativo da fonte, redimensionado com
+    LANCZOS e composto sobre a imagem com a baseline no mesmo lugar da do texto.
+    O que cair fora da imagem e recortado, como aconteceria com `draw.text`.
+    """
+    left, top, right, bottom = emoji_font.getbbox(run, mode="RGBA", anchor="ls")
+    largura, altura = max(1, right - left), max(1, bottom - top)
+    peca = Image.new("RGBA", (largura, altura), (0, 0, 0, 0))
+    ImageDraw.Draw(peca).text(
+        (-left, -top), run, font=emoji_font, anchor="ls", embedded_color=True
+    )
+    peca = peca.resize(
+        (max(1, round(largura * scale)), max(1, round(altura * scale))),
+        Image.LANCZOS,
+    )
+
+    destino_x = round(x + left * scale)
+    destino_y = round(baseline_y + top * scale)
+    # alpha_composite nao aceita destino negativo nem peca maior que a imagem:
+    # recortamos a peca para a parte que cabe.
+    corte_x, corte_y = max(0, -destino_x), max(0, -destino_y)
+    destino_x, destino_y = max(0, destino_x), max(0, destino_y)
+    cabe_l = min(peca.width - corte_x, img.width - destino_x)
+    cabe_a = min(peca.height - corte_y, img.height - destino_y)
+    if cabe_l <= 0 or cabe_a <= 0:
+        return
+    peca = peca.crop((corte_x, corte_y, corte_x + cabe_l, corte_y + cabe_a))
+    img.alpha_composite(peca, dest=(destino_x, destino_y))
 
 
 def render_text_image(
@@ -1018,7 +1232,7 @@ def render_text_image(
     line_spacing e o multiplicador de espacamento entre linhas (1.0 = altura da
     linha; valores maiores afastam as linhas)."""
     text_font = load_text_font(font_size)
-    emoji_font = load_emoji_font(font_size)
+    emoji_font, emoji_scale = load_emoji_font(font_size)
 
     ascent, descent = text_font.getmetrics()
     line_height = ascent + descent
@@ -1031,7 +1245,7 @@ def render_text_image(
             if not emoji_font:
                 return 0.0
             try:
-                return emoji_font.getlength(run)
+                return emoji_font.getlength(run) * emoji_scale
             except Exception:  # noqa: BLE001
                 return text_font.getlength(run)
         return text_font.getlength(run)
@@ -1076,13 +1290,18 @@ def render_text_image(
                 if not emoji_font:
                     continue  # sem glifo -> nao desenha tofu
                 try:
-                    draw.text(
-                        (x, baseline_y),
-                        run,
-                        font=emoji_font,
-                        anchor="ls",
-                        embedded_color=True,
-                    )
+                    if emoji_scale == 1.0:
+                        draw.text(
+                            (x, baseline_y),
+                            run,
+                            font=emoji_font,
+                            anchor="ls",
+                            embedded_color=True,
+                        )
+                    else:
+                        _paste_scaled_emoji(
+                            img, run, emoji_font, emoji_scale, x, baseline_y
+                        )
                     x += run_width(True, run)
                 except Exception:  # noqa: BLE001
                     x += run_width(True, run)
@@ -1635,6 +1854,11 @@ def render_video(src_path, text, out_path, options, audio_path=None):
             codec="libx264",
             audio_codec="aac",
             logger=None,
+            # O MoviePy monta o audio num arquivo temporario e, por padrao, o
+            # poe no diretorio de trabalho do processo. Num servico com o codigo
+            # somente leitura (systemd endurecido), todo render com audio
+            # falharia por permissao.
+            temp_audiofile_path=str(UPLOAD_DIR),
         )
         final.close()
     finally:
@@ -1676,13 +1900,18 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
                 progress=5,
             )
         else:
-            set_job(
-                job_id,
-                status="normalizing",
-                message="Normalizando o video (ffmpeg)...",
-                progress=0,
-            )
-            normalize_video(src_path, norm_path)
+            with media_slot(
+                lambda: set_job(
+                    job_id, message="Aguardando outra renderizacao terminar..."
+                )
+            ):
+                set_job(
+                    job_id,
+                    status="normalizing",
+                    message="Normalizando o video (ffmpeg)...",
+                    progress=0,
+                )
+                normalize_video(src_path, norm_path)
 
         audio_mode = bool(audio_opts and audio_opts.get("enabled"))
         # As tags do video-fonte alimentam o fallback de hashtags quando a IA
@@ -1726,17 +1955,25 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
                     audio_path,
                 )
 
-                set_job(
-                    job_id,
-                    status="rendering",
-                    message=f"Montando video {i} de {total}...",
-                    progress=int((i - 0.5) / total * 100),
-                )
                 out_name = f"{job_id}_{i}.mp4"
                 out_path = OUTPUT_DIR / out_name
-                render_video(
-                    norm_path, item["overlay"], out_path, options, audio_path=audio_path
-                )
+                with media_slot(
+                    lambda: set_job(
+                        job_id,
+                        status="rendering",
+                        message=f"Aguardando vaga para montar o video {i} de {total}...",
+                    )
+                ):
+                    set_job(
+                        job_id,
+                        status="rendering",
+                        message=f"Montando video {i} de {total}...",
+                        progress=int((i - 0.5) / total * 100),
+                    )
+                    render_video(
+                        norm_path, item["overlay"], out_path, options,
+                        audio_path=audio_path,
+                    )
                 record = store.add_output(
                     file=out_name,
                     job_id=job_id,
@@ -1779,15 +2016,22 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
             total = len(phrases)
             for i, item in enumerate(phrases, start=1):
                 phrase = item["overlay"]
-                set_job(
-                    job_id,
-                    status="rendering",
-                    message=f"Renderizando video {i} de {total}...",
-                    progress=int((i - 1) / total * 100),
-                )
                 out_name = f"{job_id}_{i}.mp4"
                 out_path = OUTPUT_DIR / out_name
-                render_video(norm_path, phrase, out_path, options)
+                with media_slot(
+                    lambda: set_job(
+                        job_id,
+                        status="rendering",
+                        message=f"Aguardando vaga para renderizar o video {i} de {total}...",
+                    )
+                ):
+                    set_job(
+                        job_id,
+                        status="rendering",
+                        message=f"Renderizando video {i} de {total}...",
+                        progress=int((i - 1) / total * 100),
+                    )
+                    render_video(norm_path, phrase, out_path, options)
                 record = store.add_output(
                     file=out_name,
                     job_id=job_id,
@@ -2188,8 +2432,37 @@ def api_library_list():
     })
 
 
+def register_library_upload(item_id, name, staging):
+    """Cria o item da Biblioteca para um video ja inteiro no staging e o poe na
+    fila de pre-processamento. Serve aos dois caminhos de upload."""
+    now = datetime.now(timezone.utc).isoformat()
+    set_library_item(
+        item_id,
+        id=item_id,
+        name=name,
+        status="queued",
+        message="Na fila de pre-processamento...",
+        error="",
+        tags=[],
+        generation_count=0,
+        total_outputs=0,
+        created_at=now,
+        processed_at="",
+        duration_sec=0,
+        size_bytes=0,
+        file="",
+    )
+    enqueue_library_preprocess(item_id, staging)
+    return get_library_item(item_id)
+
+
 @app.route("/api/library/upload", methods=["POST"])
 def api_library_upload():
+    """Upload do video inteiro numa requisicao so.
+
+    E o caminho antigo. Continua aqui para uma aba aberta com o front anterior
+    nao quebrar; o front atual usa o upload em pedacos, logo abaixo.
+    """
     if "video" not in request.files:
         return jsonify({"error": "Nenhum video enviado."}), 400
     file = request.files["video"]
@@ -2203,26 +2476,174 @@ def api_library_upload():
     staging = LIBRARY_STAGING / f"{item_id}{ext}"
     file.save(str(staging))
 
-    now = datetime.now(timezone.utc).isoformat()
-    set_library_item(
-        item_id,
-        id=item_id,
-        name=file.filename,
-        status="queued",
-        message="Na fila de pre-processamento...",
-        error="",
-        tags=[],
-        generation_count=0,
-        total_outputs=0,
-        created_at=now,
-        processed_at="",
-        duration_sec=0,
-        size_bytes=0,
-        file="",
-    )
+    item = register_library_upload(item_id, file.filename, staging)
+    return jsonify({"id": item_id, "item": item})
 
-    enqueue_library_preprocess(item_id, staging)
-    return jsonify({"id": item_id, "item": get_library_item(item_id)})
+
+# ---------------------------------------------------------------------------
+# Upload em pedacos
+# ---------------------------------------------------------------------------
+# Mandar o video inteiro numa requisicao so funciona enquanto o navegador fala
+# direto com o 127.0.0.1. Atras da Cloudflare (tunel no PC ou a VPS) o corpo de
+# uma requisicao tem teto de 100 MB no plano gratuito, e um video 4K de iPhone
+# passa disso com folga -- a resposta e um 413 que nao explica nada.
+#
+# Entao o front manda o arquivo em pedacos de UPLOAD_CHUNK_BYTES, em ordem, e o
+# backend anexa cada um num `.part` no staging. Todo pedaco diz em que offset
+# comeca: reenviar um que ja chegou (a resposta se perdeu no caminho) e
+# inofensivo, e um pedaco fora de ordem volta 409 com o offset certo, para o
+# cliente retomar dali.
+
+@app.route("/api/library/upload/init", methods=["POST"])
+def api_library_upload_init():
+    dados = request.get_json(silent=True) or {}
+    nome = str(dados.get("name") or "").strip()[:255]
+    try:
+        tamanho = int(dados.get("size"))
+    except (TypeError, ValueError):
+        tamanho = 0
+
+    if not nome:
+        return jsonify({"error": "Arquivo invalido."}), 400
+    ext = Path(nome).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": f"Formato nao suportado: {ext}"}), 400
+    if tamanho <= 0:
+        return jsonify({"error": "O arquivo esta vazio."}), 400
+    if tamanho > UPLOAD_MAX_BYTES:
+        limite_gb = UPLOAD_MAX_BYTES // (1024 ** 3)
+        return jsonify({"error": f"O video passa do limite de {limite_gb} GB."}), 413
+
+    # Disco de VPS costuma ser pequeno. Melhor recusar agora do que deixar o
+    # upload inteiro chegar e falhar no ultimo pedaco com "No space left".
+    livre = shutil.disk_usage(LIBRARY_STAGING).free
+    if livre < tamanho + UPLOAD_DISK_MARGIN:
+        return jsonify({
+            "error": (
+                f"Sem espaco em disco para este video: ha {livre // 1024 ** 2} MB "
+                f"livres e ele precisa de {(tamanho + UPLOAD_DISK_MARGIN) // 1024 ** 2} MB."
+            )
+        }), 507
+
+    expire_stale_uploads()
+    upload_id = uuid.uuid4().hex
+    _upload_part_path(upload_id).write_bytes(b"")
+    with UPLOADS_LOCK:
+        UPLOADS[upload_id] = {
+            "name": nome,
+            "ext": ext,
+            "size": tamanho,
+            "received": 0,
+            "touched_at": time.time(),
+            "lock": threading.Lock(),
+            # Resposta do `complete`, guardada para um reenvio dele devolver o
+            # mesmo item em vez de 404.
+            "result": None,
+        }
+    return jsonify({"upload_id": upload_id, "chunk_size": UPLOAD_CHUNK_BYTES})
+
+
+@app.route("/api/library/upload/<upload_id>", methods=["PUT"])
+def api_library_upload_chunk(upload_id):
+    with UPLOADS_LOCK:
+        up = UPLOADS.get(upload_id)
+    if not up:
+        return jsonify({"error": "Upload nao encontrado ou expirado. Envie o video de novo."}), 404
+
+    try:
+        offset = int(request.args.get("offset", ""))
+    except ValueError:
+        return jsonify({"error": "Offset invalido."}), 400
+    comprimento = request.content_length
+    if comprimento is None:
+        return jsonify({"error": "Content-Length obrigatorio."}), 411
+    if comprimento > UPLOAD_CHUNK_BYTES:
+        return jsonify({"error": "Pedaco maior que o combinado."}), 413
+
+    with up["lock"]:
+        up["touched_at"] = time.time()
+        if up["result"] is not None:
+            return jsonify({"error": "Este upload ja foi concluido."}), 409
+
+        recebido = up["received"]
+        if offset < 0 or offset > recebido:
+            return jsonify({"error": "Pedaco fora de ordem.", "recebido": recebido}), 409
+        if offset + comprimento > up["size"]:
+            return jsonify({"error": "O pedaco passa do tamanho declarado do arquivo."}), 400
+
+        # Bytes do comeco deste pedaco que ja tinham chegado antes.
+        repetidos = recebido - offset
+        if repetidos >= comprimento:
+            return jsonify({"recebido": recebido})
+
+        lidos = escritos = 0
+        with open(_upload_part_path(upload_id), "r+b") as destino:
+            destino.seek(recebido)
+            try:
+                while lidos < comprimento:
+                    bloco = request.stream.read(min(1024 * 1024, comprimento - lidos))
+                    if not bloco:
+                        break
+                    pula = max(0, repetidos - lidos)
+                    lidos += len(bloco)
+                    if pula < len(bloco):
+                        destino.write(bloco[pula:])
+                        escritos += len(bloco) - pula
+            except Exception:
+                # O Werkzeug levanta ClientDisconnected quando a conexao cai no
+                # meio do corpo. O que ja foi escrito deste pedaco nao vale.
+                destino.truncate(recebido)
+                raise
+            if lidos < comprimento:
+                destino.truncate(recebido)
+                return jsonify({"error": "O pedaco chegou incompleto.", "recebido": recebido}), 400
+
+        up["received"] = recebido + escritos
+        return jsonify({"recebido": up["received"]})
+
+
+@app.route("/api/library/upload/<upload_id>/complete", methods=["POST"])
+def api_library_upload_complete(upload_id):
+    with UPLOADS_LOCK:
+        up = UPLOADS.get(upload_id)
+    if not up:
+        return jsonify({"error": "Upload nao encontrado ou expirado. Envie o video de novo."}), 404
+
+    with up["lock"]:
+        up["touched_at"] = time.time()
+        if up["result"] is not None:
+            return jsonify(up["result"])
+        if up["received"] != up["size"]:
+            return jsonify({
+                "error": "O upload ainda nao terminou.",
+                "recebido": up["received"],
+            }), 409
+
+        parte = _upload_part_path(upload_id)
+        if parte.stat().st_size != up["size"]:
+            # Nao deveria acontecer. Se acontecer, um video corrompido na
+            # Biblioteca seria pior que pedir o envio de novo.
+            return jsonify({
+                "error": "O arquivo recebido nao bate com o tamanho do original. Envie de novo."
+            }), 500
+
+        item_id = uuid.uuid4().hex
+        staging = LIBRARY_STAGING / f"{item_id}{up['ext']}"
+        parte.replace(staging)
+        item = register_library_upload(item_id, up["name"], staging)
+        up["result"] = {"id": item_id, "item": item}
+        return jsonify(up["result"])
+
+
+@app.route("/api/library/upload/<upload_id>", methods=["DELETE"])
+def api_library_upload_abort(upload_id):
+    with UPLOADS_LOCK:
+        up = UPLOADS.pop(upload_id, None)
+    if up:
+        with up["lock"]:
+            if up["result"] is None:
+                _upload_part_path(upload_id).unlink(missing_ok=True)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/library/<item_id>", methods=["GET"])
@@ -2771,6 +3192,7 @@ def api_tiktok_account():
             "account": accounts[0] if accounts else None,
             "accounts": accounts,
             "cifra_do_sistema": secretbox.is_real_encryption(),
+            "protecao_dos_tokens": secretbox.protection(),
         }
     )
 
@@ -2794,9 +3216,11 @@ def api_tiktok_connect():
 
     `request.host_url` decide o caminho de volta: acessado do PC, o TikTok
     devolve no loopback; acessado pela URL publica, devolve na rota abaixo.
+    Com `STUDIO_PUBLIC_URL` definido (servidor), o retorno e sempre ele.
     """
+    origem = f"{PUBLIC_URL}/" if PUBLIC_URL else request.host_url
     try:
-        return jsonify(tiktok.start_connect(request.host_url))
+        return jsonify(tiktok.start_connect(origem))
     except tiktok.TikTokError as e:
         return jsonify({"error": str(e)}), 400
 

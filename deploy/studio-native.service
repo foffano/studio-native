@@ -1,0 +1,47 @@
+# Studio Native como servico do systemd.
+#
+# Nao edite a copia em /etc/systemd/system: ela e gerada a partir deste arquivo
+# por tools/instalar-vps.sh, que ajusta os caminhos para onde o repositorio foi
+# clonado. Mudou algo aqui? Rode o instalador de novo.
+
+[Unit]
+Description=Studio Native (gerador de videos)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=studio
+Group=studio
+WorkingDirectory=/opt/studio-native
+EnvironmentFile=/etc/studio-native/studio-native.env
+# Chave que cifra os tokens do TikTok. O arquivo de origem e so do root; o
+# systemd entrega ao servico uma copia em $CREDENTIALS_DIRECTORY que nenhum
+# outro processo le -- e que fica fora da pasta de dados e dos backups dela.
+LoadCredential=token-key:/etc/studio-native/token.key
+ExecStart=/opt/studio-native/.venv/bin/python app.py
+# Substitui o "vigia" de 5 minutos da tarefa agendada do Windows: caiu, sobe.
+Restart=always
+RestartSec=5
+
+# Pasta de dados criada e mantida pelo proprio systemd, com o dono certo.
+StateDirectory=studio-native
+StateDirectoryMode=0700
+UMask=0077
+
+# Endurecimento. O codigo fica somente leitura; so a pasta de dados e gravavel.
+# E por isso que o app manda o audio temporario do MoviePy para uploads/.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

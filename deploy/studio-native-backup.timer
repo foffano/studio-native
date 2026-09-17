@@ -1,0 +1,11 @@
+[Unit]
+Description=Backup diario do Studio Native
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=20min
+# Se a VPS estava desligada no horario, roda assim que ligar.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -26,7 +26,10 @@ que fica de pe no seu PC e se abre pelo navegador. A troca resolveu o problema
 que o `.exe` nunca resolveu — usar do celular — e de quebra tirou 600 MB de
 Chromium empacotado.
 
-**Precisa uma vez:** Python 3.10+, Node.js 18+ e Git.
+> **Numa VPS Linux**, em vez de no PC: siga [`docs/vps-linux.md`](docs/vps-linux.md).
+> Um script instala tudo e deixa o app de pe como servico do systemd.
+
+**Precisa uma vez:** Python 3.10+, Node.js 20.19+ (ou 22.12+) e Git.
 
 ```bash
 git clone https://github.com/foffano/studio-native.git
@@ -216,7 +219,7 @@ Material do cadastro e o passo a passo do portal estao em
 
 ## Pré-requisitos de desenvolvimento
 
-- **Node.js 18+** e **Python 3.10+**
+- **Node.js 20.19+** (ou 22.12+, exigencia do Vite 8) e **Python 3.10+**
 - `pip install -r requirements.txt`
 - `cd desktop && npm install`
 - ffmpeg/ffprobe no PATH **ou** rode `python tools/fetch_ffmpeg.py` para baixá-los em `bin/` (o backend prioriza os binários de `bin/`).
@@ -390,11 +393,17 @@ app.py                       # backend Flask: OpenRouter/ElevenLabs + MoviePy/Pi
 store.py                     # catalogo de producao em SQLite (outputs/publications/accounts)
 captions.py                  # legenda do post + sanitizacao das hashtags (limite de 5)
 tiktok.py                    # Login Kit v2 com PKCE + envio para a caixa de entrada
-secretbox.py                 # cifragem dos tokens em repouso (DPAPI no Windows)
+secretbox.py                 # cifragem dos tokens em repouso (DPAPI no Windows, AES-GCM fora)
 auth.py                      # senha (scrypt), sessao por cookie e freio de forca bruta
 tools/fetch_ffmpeg.py        # baixa ffmpeg/ffprobe para bin/
 tools/instalar-servico.ps1   # cria a tarefa agendada que mantem o app de pe
 tools/atualizar.ps1          # git pull + build + reinicio do servico
+tools/exportar-para-vps.ps1  # empacota os dados do Windows para levar a VPS
+tools/instalar-vps.sh        # instala na VPS Linux: pacotes, venv, build, systemd
+tools/atualizar.sh           # git pull + build + reinicio, na VPS
+tools/importar-dados.sh      # poe na VPS os dados exportados do Windows
+tools/backup.sh              # copia diaria do banco (e dos videos, com rclone)
+deploy/                      # unidades do systemd e o modelo do arquivo de ambiente
 requirements.txt             # deps Python
 fonts/Quicksand.ttf          # fonte arredondada empacotada
 bin/                         # ffmpeg.exe/ffprobe.exe (gerado por fetch_ffmpeg.py)
@@ -425,6 +434,8 @@ Saída de build: `desktop/dist/`. Dados em runtime: `%APPDATA%/StudioNative/` �
   o documento registra também onde a API real desmentiu o plano.
 - [`docs/modo-navegador.md`](docs/modo-navegador.md) — rodar no navegador, expor
   por túnel e por que a autenticação pertence ao túnel, não ao código.
+- [`docs/vps-linux.md`](docs/vps-linux.md) — rodar numa VPS Linux: instalação,
+  túnel, migração dos dados do Windows, backup e o que fazer quando algo falha.
 - [`docs/tiktok/formulario-de-cadastro.md`](docs/tiktok/formulario-de-cadastro.md)
   — o que preencher no portal do TikTok, com os textos prontos.
 - [`services/tiktok-auth/README.md`](services/tiktok-auth/README.md) — o Worker

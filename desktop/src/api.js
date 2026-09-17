@@ -84,41 +84,128 @@ export async function getStatus(jobId) {
 export const libraryVideoUrl = (file) => `${BACKEND}/library/${file}`;
 export const libraryThumbnailUrl = (id) => `${BACKEND}/library-thumbs/${id}.jpg`;
 
-export async function uploadToLibrary(file, onProgress) {
-  // XMLHttpRequest continua sendo a API mais leve e confiável para progresso
-  // de upload no navegador. `fetch` não expõe quantos bytes do body já foram
-  // enviados, então uma barra feita com ele seria apenas uma animação falsa.
-  return new Promise((resolve, reject) => {
-    const fd = new FormData();
-    fd.append("video", file);
+// --- Upload para a Biblioteca, em pedaços ----------------------------------
+// Atrás da Cloudflare (túnel ou VPS) uma requisição não passa de 100 MB no
+// plano gratuito, e vídeo de celular passa disso fácil — a resposta seria um
+// 413 sem explicação. O arquivo vai em pedaços do tamanho que o backend pedir,
+// e um pedaço que falha por rede é reenviado sem perder o que já chegou.
 
+const TENTATIVAS_POR_PEDACO = 4;
+
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Queda de rede, timeout e erro do servidor costumam passar sozinhos; o resto
+// (formato recusado, sessão caída) não passa tentando de novo.
+const falhaPassageira = (status) =>
+  status === 0 || status === 408 || status === 429 || status >= 500;
+
+/** Envia um pedaço com XMLHttpRequest: `fetch` não expõe quantos bytes do
+ * corpo já saíram, e uma barra feita com ele seria só uma animação falsa. */
+function enviarPedaco(uploadId, pedaco, offset, onEnviados) {
+  return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", apiUrl("/api/library/upload"));
+    xhr.open("PUT", apiUrl(`/api/library/upload/${uploadId}?offset=${offset}`));
     xhr.withCredentials = true;
     xhr.responseType = "json";
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
 
     xhr.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
+      if (onEnviados) onEnviados(event.loaded);
     });
+
+    const falhar = (mensagem, status, data = {}) => {
+      const erro = new Error(mensagem);
+      erro.status = status;
+      erro.data = data;
+      reject(erro);
+    };
 
     xhr.addEventListener("load", () => {
       const data = xhr.response || {};
       if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress && onProgress(100);
         resolve(data);
         return;
       }
       if (xhr.status === 401 && (data.error === "nao_autenticado" || data.error === "sem_senha")) {
         window.dispatchEvent(new CustomEvent("studio:sem-sessao"));
       }
-      reject(new Error(data.error || `Erro ${xhr.status}`));
+      falhar(data.error || `Erro ${xhr.status} no envio`, xhr.status, data);
     });
-    xhr.addEventListener("error", () => reject(new Error("Falha de rede durante o upload.")));
-    xhr.addEventListener("abort", () => reject(new Error("Upload cancelado.")));
-    xhr.send(fd);
+    xhr.addEventListener("error", () => falhar("Falha de rede durante o upload.", 0));
+    xhr.addEventListener("abort", () => falhar("Upload cancelado.", -1));
+    xhr.send(pedaco);
   });
+}
+
+export async function uploadToLibrary(file, onProgress) {
+  const inicio = await req(apiUrl("/api/library/upload/init"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: file.name, size: file.size }),
+  });
+  const { upload_id: uploadId, chunk_size: tamanhoDoPedaco } = await jsonOrThrow(inicio);
+
+  const total = file.size;
+  // A barra nunca anda para trás: um pedaço reenviado recomeça do zero, e sem
+  // isto ela recuaria a cada nova tentativa. E fica em 99 até o backend
+  // confirmar: 100% com o item ainda por criar pareceria concluído antes da hora.
+  let ultimo = -1;
+  const progresso = (bytes) => {
+    const percentual = Math.min(99, Math.floor((bytes / total) * 100));
+    if (percentual > ultimo) {
+      ultimo = percentual;
+      onProgress && onProgress(percentual);
+    }
+  };
+
+  try {
+    let offset = 0;
+    let falhas = 0;
+    while (offset < total) {
+      const fim = Math.min(offset + tamanhoDoPedaco, total);
+      try {
+        const r = await enviarPedaco(uploadId, file.slice(offset, fim), offset, (enviados) =>
+          progresso(offset + enviados)
+        );
+        offset = typeof r.recebido === "number" ? r.recebido : fim;
+        falhas = 0;
+      } catch (e) {
+        // 409 com `recebido`: o backend tem outra conta de quanto já chegou (a
+        // resposta de um pedaço anterior se perdeu). Continua de onde ele diz.
+        const recebido = e.data && e.data.recebido;
+        if (e.status === 409 && typeof recebido === "number" && recebido !== offset) {
+          offset = recebido;
+          continue;
+        }
+        falhas += 1;
+        if (!falhaPassageira(e.status) || falhas >= TENTATIVAS_POR_PEDACO) throw e;
+        await esperar(1000 * 2 ** (falhas - 1));
+      }
+      progresso(offset);
+    }
+
+    let data;
+    for (let tentativa = 1; ; tentativa += 1) {
+      try {
+        const res = await req(apiUrl(`/api/library/upload/${uploadId}/complete`), {
+          method: "POST",
+        });
+        data = await jsonOrThrow(res);
+        break;
+      } catch (e) {
+        // `fetch` só rejeita com TypeError em falha de rede. Repetir é seguro:
+        // o backend devolve o mesmo item se a conclusão já tinha acontecido.
+        if (!(e instanceof TypeError) || tentativa >= 3) throw e;
+        await esperar(1000 * tentativa);
+      }
+    }
+    onProgress && onProgress(100);
+    return data;
+  } catch (e) {
+    // Melhor-esforço: libera o arquivo parcial no backend.
+    req(apiUrl(`/api/library/upload/${uploadId}`), { method: "DELETE" }).catch(() => {});
+    throw e;
+  }
 }
 
 export async function updateLibraryTags(id, tags) {

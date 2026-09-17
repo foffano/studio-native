@@ -18,6 +18,9 @@ venv/
 desktop/node_modules/
 desktop/dist/
 desktop/release/
+# build em pasta nova + troca (tools/atualizar.sh)
+desktop/dist.novo/
+desktop/dist.antigo/
 
 # artefatos de teste
 _frame_*.png

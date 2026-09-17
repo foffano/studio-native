@@ -7,7 +7,7 @@ tunel, a premissa cai e a protecao precisa existir no codigo.
 ## O que este modulo protege, e o que nao protege
 
 Ele protege o **acesso HTTP**. Nao protege os tokens do TikTok em repouso --
-disso cuida `secretbox.py`, com o DPAPI do Windows.
+disso cuida `secretbox.py`, com o DPAPI no Windows e AES-GCM fora dele.
 
 Sao camadas separadas de proposito, e vale explicar porque a ideia de unificar e
 tentadora: derivar a chave de cifragem dos tokens a partir da senha do admin

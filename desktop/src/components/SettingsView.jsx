@@ -86,7 +86,7 @@ export default function SettingsView({ onSaved }) {
       <div className="card">
         <h3 className="card__title">Chaves de API</h3>
         <p className="card__hint">
-          As chaves ficam salvas localmente neste computador
+          As chaves ficam salvas na máquina onde o Studio Native roda
           {data?.config_path ? ` (${data.config_path})` : ""} e nunca são
           enviadas para outro lugar além das APIs oficiais.
         </p>

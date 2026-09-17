@@ -1,6 +1,6 @@
 {
   "name": "studio-native",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Studio Native - gerador de videos com IA (React + backend Python)",
   "author": "Studio Native",
   "type": "module",
