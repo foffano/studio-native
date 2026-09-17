@@ -23,12 +23,17 @@ Flask + waitress (serviço do systemd, usuário `studio`)
         └── MP4 → TikTok, direto
 ```
 
-**O cloudflared roda na mesma máquina que o app, e isso não é detalhe.** O app
-só confia nos cabeçalhos da Cloudflare (o IP real do visitante e o fato de o
-pedido ter chegado por HTTPS) quando a conexão vem do loopback. Com o túnel na
-mesma máquina, isso vale. Com Docker ou um proxy em outra máquina, o pedido
-chega de outro IP, os cabeçalhos são ignorados e o login do TikTok quebra,
-porque o endereço de retorno sai com `http://`.
+**O app confia nos cabeçalhos da Cloudflare** — o IP real do visitante e o fato
+de o pedido ter chegado por HTTPS — **só quando eles vêm de um proxy conhecido.**
+Com o cloudflared na mesma máquina, isso é o loopback, e funciona sem
+configurar nada. Com o túnel em container, o pedido chega do IP da rede do
+Docker, e é preciso declarar essa rede em `STUDIO_TRUSTED_PROXIES`. Sem isso o
+freio de força bruta trata o mundo inteiro como um IP só: cinco senhas erradas
+de qualquer pessoa trancam a porta para você também.
+
+Este guia descreve a instalação direta na máquina (systemd). Se a sua VPS já
+roda apps em Docker atrás de um cloudflared, veja **"Numa VPS que já roda
+Docker"**, mais abaixo.
 
 **O endereço continua `native.toffa.com.br`.** Assim o retorno do login do
 TikTok, registrado no portal e no `ALLOWED_REDIRECTS` do Worker, não muda, e o
@@ -96,6 +101,7 @@ A configuração fica em `/etc/studio-native/studio-native.env`:
 | `STUDIO_DATA_DIR` | Pasta de dados. Se mudar, ajuste `StateDirectory` e `ReadWritePaths` nas unidades em `deploy/`. |
 | `STUDIO_TMP_DIR` | Temporários de upload. Ficam no disco porque em algumas distros `/tmp` é memória. |
 | `STUDIO_RENDER_SLOTS` | Quantos renders e normalizações rodam ao mesmo tempo. Quem espera vê "Aguardando vaga..." na tela. |
+| `STUDIO_TRUSTED_PROXIES` | Redes de onde os cabeçalhos da Cloudflare valem, além do loopback. Só é preciso quando o túnel não roda na própria máquina — por exemplo `172.16.0.0/12` para um cloudflared em container. |
 
 Depois de mudar algo:
 
@@ -223,6 +229,37 @@ sudo -u studio cp /var/backups/studio-native/<data>/studio.db /var/lib/studio-na
 sudo -u studio rm -f /var/lib/studio-native/studio.db-wal /var/lib/studio-native/studio.db-shm
 sudo systemctl start studio-native
 ```
+
+## Numa VPS que já roda Docker
+
+Se a VPS já tem apps em compose atrás de um cloudflared compartilhado, o Studio
+Native entra do mesmo jeito, sem instalar nada na máquina. O repositório traz
+[`Dockerfile`](../Dockerfile), [`deploy/compose.yml`](../deploy/compose.yml) e um
+workflow que publica a imagem no GHCR a cada release.
+
+A imagem tem o ffmpeg e a fonte de emoji dentro, roda como um usuário sem
+privilégios (uid 10001) e serve na porta 5050. Antes do primeiro deploy, na VPS:
+
+```bash
+sudo install -d -o 10001 -g 10001 -m 700 /srv/apps/studio-native/data
+sudo sh -c 'head -c 32 /dev/urandom > /srv/apps/studio-native/token.key'
+sudo chown 10001:10001 /srv/apps/studio-native/token.key && sudo chmod 400 /srv/apps/studio-native/token.key
+printf 'STUDIO_PUBLIC_URL=https://native.toffa.com.br\n' | sudo tee /srv/apps/studio-native/app.env
+```
+
+O `data/` e o `token.key` precisam ser do uid 10001 porque o container não roda
+como root. A chave fica fora de `data/` de propósito: um backup da pasta de
+dados não leva a chave junto.
+
+Depois, com a imagem publicada, o deploy é o mesmo dos outros apps — no
+prod-01, `/srv/infra/scripts/deploy.sh`, que sobe a versão nova e volta sozinho
+para a anterior se o healthcheck falhar. Na Cloudflare, o hostname aponta para
+`http://studio-native:5050`, pela rede `edge`.
+
+Duas diferenças em relação ao systemd: os dados ficam em
+`/srv/apps/studio-native/data` (e não em `/var/lib/studio-native`), e o
+`STUDIO_TRUSTED_PROXIES` precisa cobrir a rede do Docker, senão o app vê todos
+os visitantes com o mesmo IP.
 
 ## Swap
 

@@ -1,0 +1,21 @@
+# O que nao entra na imagem (nem no contexto do build).
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+bin
+build
+dist
+deploy
+docs
+services
+tools
+desktop/node_modules
+desktop/dist
+desktop/release
+desktop/build
+.env
+*.log
+studionative-logo.png

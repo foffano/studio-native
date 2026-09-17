@@ -1,5 +1,6 @@
 import json
 import hashlib
+import ipaddress
 import os
 import random
 import re
@@ -261,26 +262,63 @@ init_settings()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB
 
+def _redes_confiaveis():
+    """Redes de onde os cabecalhos de proxy valem (IP real do visitante, esquema).
+
+    So o loopback por padrao: e de la que o cloudflared entrega quando roda na
+    mesma maquina. Com o tunel em container, o pedido chega do IP da rede do
+    Docker, e e preciso dizer isso em `STUDIO_TRUSTED_PROXIES` -- senao o freio
+    de forca bruta trata o mundo inteiro como um IP so, e cinco senhas erradas
+    de qualquer pessoa trancam a porta para voce tambem.
+    """
+    redes = [ipaddress.ip_network("127.0.0.1/32"), ipaddress.ip_network("::1/128")]
+    for parte in os.getenv("STUDIO_TRUSTED_PROXIES", "").replace(";", ",").split(","):
+        parte = parte.strip()
+        if not parte:
+            continue
+        try:
+            redes.append(ipaddress.ip_network(parte, strict=False))
+        except ValueError:
+            print(
+                f"[StudioNative] STUDIO_TRUSTED_PROXIES: ignorando '{parte}' "
+                f"(nao e um IP nem uma rede)",
+                flush=True,
+            )
+    return redes
+
+
+REDES_CONFIAVEIS = _redes_confiaveis()
+
+
+def proxy_confiavel(endereco):
+    """O pedido veio de um proxy nosso? Ver `_redes_confiaveis`."""
+    try:
+        ip = ipaddress.ip_address((endereco or "").strip())
+    except ValueError:
+        return False
+    return any(ip in rede for rede in REDES_CONFIAVEIS)
+
+
 def _corrigir_esquema(wsgi_app):
     """Faz o Flask saber que o pedido chegou por HTTPS.
 
-    Atras do tunel, a Cloudflare entrega ao Flask em HTTP puro no loopback --
-    entao `request.host_url` diria "http://native.toffa.com.br". O
-    `redirect_uri` do OAuth sairia com o esquema errado, e o TikTok, que compara
-    byte a byte com o que esta registrado, recusaria a troca com um erro que nao
-    menciona esquema nenhum.
+    Atras do tunel, a Cloudflare entrega ao Flask em HTTP puro -- entao
+    `request.host_url` diria "http://native.toffa.com.br". O `redirect_uri` do
+    OAuth sairia com o esquema errado, e o TikTok, que compara byte a byte com o
+    que esta registrado, recusaria a troca com um erro que nao menciona esquema
+    nenhum. (Num servidor, `STUDIO_PUBLIC_URL` resolve isso de vez.)
 
     **O `ProxyFix` do Werkzeug nao resolve aqui**: ele procura
     `X-Forwarded-Proto`, e o cloudflared nao envia esse cabecalho. Quem carrega
     a informacao e o `CF-Visitor`, no formato `{"scheme":"https"}`.
 
-    So confiamos no cabecalho quando a conexao vem do loopback, que e por onde o
-    tunel entrega; de qualquer outra origem, ele e ignorado.
+    So confiamos no cabecalho quando a conexao vem de um proxy conhecido; de
+    qualquer outra origem, ele e ignorado.
     """
     def middleware(environ, start_response):
         remoto = environ.get("REMOTE_ADDR", "")
         visitor = environ.get("HTTP_CF_VISITOR", "")
-        if remoto in ("127.0.0.1", "::1") and visitor:
+        if visitor and proxy_confiavel(remoto):
             try:
                 esquema = json.loads(visitor).get("scheme")
             except (ValueError, AttributeError):
@@ -437,7 +475,7 @@ def api_auth_setup():
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
-    ip = auth.ip_do_pedido(request)
+    ip = auth.ip_do_pedido(request, proxy_confiavel)
     espera = auth.bloqueado_ate(ip)
     if espera:
         return jsonify({

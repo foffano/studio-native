@@ -403,7 +403,8 @@ tools/instalar-vps.sh        # instala na VPS Linux: pacotes, venv, build, syste
 tools/atualizar.sh           # git pull + build + reinicio, na VPS
 tools/importar-dados.sh      # poe na VPS os dados exportados do Windows
 tools/backup.sh              # copia diaria do banco (e dos videos, com rclone)
-deploy/                      # unidades do systemd e o modelo do arquivo de ambiente
+Dockerfile                   # imagem (front + backend + ffmpeg + fontes)
+deploy/                      # unidades do systemd, arquivo de ambiente e compose.yml
 requirements.txt             # deps Python
 fonts/Quicksand.ttf          # fonte arredondada empacotada
 bin/                         # ffmpeg.exe/ffprobe.exe (gerado por fetch_ffmpeg.py)

@@ -156,16 +156,21 @@ def obter_secret_key(config, salvar):
     return chave
 
 
-def ip_do_pedido(request):
+def ip_do_pedido(request, proxy_confiavel=None):
     """IP real do cliente, respeitando o cabecalho do Cloudflare.
 
-    Atras do tunel, `remote_addr` e sempre 127.0.0.1 -- o freio de forca bruta
-    trataria o mundo inteiro como um IP so. `CF-Connecting-IP` e posto pela
-    Cloudflare e nao pode ser forjado por quem passa por ela; so confiamos nele
-    quando a conexao vem do loopback, que e por onde o tunel entrega.
+    Atras do tunel, `remote_addr` e o do proxy: 127.0.0.1 com o cloudflared na
+    mesma maquina, ou o IP da rede do Docker quando ele roda em container. Nos
+    dois casos o freio de forca bruta trataria o mundo inteiro como um IP so.
+    `CF-Connecting-IP` e posto pela Cloudflare e nao pode ser forjado por quem
+    passa por ela; so confiamos nele quando a conexao vem de um proxy conhecido.
+
+    `proxy_confiavel` responde se um endereco e um proxy nosso (no app, a lista
+    sai de STUDIO_TRUSTED_PROXIES). Sem ele, so o loopback conta.
     """
-    if request.remote_addr in ("127.0.0.1", "::1"):
+    remoto = request.remote_addr or ""
+    if proxy_confiavel(remoto) if proxy_confiavel else remoto in ("127.0.0.1", "::1"):
         vindo_da_cloudflare = request.headers.get("CF-Connecting-IP")
         if vindo_da_cloudflare:
             return vindo_da_cloudflare.strip()[:45]
-    return request.remote_addr or "desconhecido"
+    return remoto or "desconhecido"

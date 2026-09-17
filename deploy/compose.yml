@@ -1,0 +1,72 @@
+# Compose de producao do Studio Native (padrao do /srv/infra no prod-01).
+# O deploy.sh copia este arquivo para /srv/apps/studio-native/compose.yml e
+# escreve IMAGE e IMAGE_TAG no .env de la.
+#
+# Antes do primeiro deploy, na VPS:
+#   sudo install -d -o 10001 -g 10001 -m 700 /srv/apps/studio-native/data
+#   sudo sh -c 'head -c 32 /dev/urandom > /srv/apps/studio-native/token.key'
+#   sudo chown 10001:10001 /srv/apps/studio-native/token.key
+#   sudo chmod 400 /srv/apps/studio-native/token.key
+#   sudo install -m 660 -g deploy /dev/null /srv/apps/studio-native/app.env
+#   # e em app.env: STUDIO_PUBLIC_URL=https://native.toffa.com.br
+services:
+  web:
+    image: ${IMAGE:?}:${IMAGE_TAG:?}
+    init: true
+    restart: unless-stopped
+    # O container nao roda como root, entao data/ e token.key no host precisam
+    # ser deste uid. Se nao forem, o app sobe e falha no healthcheck.
+    user: "10001:10001"
+    env_file: app.env
+    environment:
+      STUDIO_HOST: 0.0.0.0
+      STUDIO_PORT: "5050"
+      STUDIO_DATA_DIR: /app/data
+      # Temporario do upload no disco, e nao em /tmp (que pode ser memoria).
+      STUDIO_TMP_DIR: /app/data/tmp
+      # Tudo chega por HTTPS pela Cloudflare: o cookie de sessao so viaja cifrado.
+      STUDIO_COOKIE_SECURE: "1"
+      # O cloudflared fala com o app pela rede edge, entao o IP real do visitante
+      # chega no cabecalho da Cloudflare -- e so vale vindo de dentro do Docker.
+      # Sem isto, o freio de forca bruta trataria todo mundo como um IP so.
+      STUDIO_TRUSTED_PROXIES: 172.16.0.0/12
+      # Chave que cifra os tokens do TikTok. Fora da pasta de dados de proposito:
+      # um backup de data/ nao leva a chave junto.
+      STUDIO_TOKEN_KEY_FILE: /run/secrets/token-key
+      # Render e normalizacao sao pesados. 1 por vez cabe nos 2 cpus abaixo.
+      STUDIO_RENDER_SLOTS: "1"
+    volumes:
+      - ./data:/app/data
+      - ./token.key:/run/secrets/token-key:ro
+    networks:
+      default:
+      edge:
+        aliases: [studio-native] # na Cloudflare: http://studio-native:5050
+    # E o healthcheck que diz ao deploy.sh se a versao nova serve ou se volta a anterior.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/api/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      # O import do MoviePy/numpy leva alguns segundos na primeira subida.
+      start_period: 40s
+    mem_limit: 3g
+    cpus: 2
+    # Render em andamento: da tempo do ffmpeg morrer sozinho antes do SIGKILL.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    # Sem "ports:". A entrada e so pelo Cloudflare Tunnel, pela rede edge.
+
+networks:
+  edge:
+    external: true
