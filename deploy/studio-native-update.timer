@@ -1,0 +1,11 @@
+[Unit]
+Description=Confere releases do Studio Native a cada cinco minutos
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+Unit=studio-native-update.service
+
+[Install]
+WantedBy=timers.target

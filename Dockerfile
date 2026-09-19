@@ -43,5 +43,11 @@ ENV PYTHONUNBUFFERED=1 \
     STUDIO_DATA_DIR=/app/data \
     STUDIO_TMP_DIR=/app/data/tmp
 
+# Tag da release (ex.: v1.5.3), passada pelo release.yml. O /api/health a
+# informa, e o atualizador do prod-01 confere se a versao no ar e a esperada.
+ARG APP_VERSION=""
+ENV STUDIO_VERSION=${APP_VERSION}
+LABEL org.opencontainers.image.version=${APP_VERSION}
+
 EXPOSE 5050
 CMD ["python", "app.py"]

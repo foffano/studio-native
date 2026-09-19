@@ -1,10 +1,12 @@
 # Publicar uma release no GitHub gera a imagem no GHCR e implanta em producao.
 # Para reimplantar uma versao antiga: Actions -> Release -> Run workflow -> tag.
 #
-# O passo de deploy so roda quando existe o runner self-hosted do prod-01 e a
-# variavel DEPLOY_VIA_RUNNER esta como "true" (Settings -> Actions -> Variables).
-# Sem ela, a release apenas publica a imagem, e o deploy e feito a mao na VPS:
-#   /srv/infra/scripts/deploy.sh studio-native ghcr.io/foffano/studio-native <tag> compose.yml
+# No prod-01 quem instala a release e o studio-native-update.timer: a cada 5
+# minutos ele confere a ultima release e, quando a imagem ja esta no GHCR e nao
+# ha geracao em andamento, chama o deploy.sh (ver deploy/studio-native-update.py).
+#
+# O passo de deploy abaixo e a alternativa por runner self-hosted; so roda com a
+# variavel DEPLOY_VIA_RUNNER como "true" (Settings -> Actions -> Variables).
 
 name: Release
 
@@ -47,6 +49,7 @@ jobs:
           context: .
           push: true
           tags: ${{ env.IMAGE }}:${{ env.TAG }}
+          build-args: APP_VERSION=${{ env.TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

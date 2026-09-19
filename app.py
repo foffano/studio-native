@@ -2359,9 +2359,25 @@ def api_preflight(_unused):
     return ("", 204)
 
 
+def active_work():
+    """Quanto trabalho em andamento seria perdido num reinicio. O atualizador
+    do prod-01 so troca de versao quando isto da zero."""
+    with JOBS_LOCK:
+        jobs = sum(1 for j in JOBS.values() if j.get("status") not in ("done", "error"))
+    return jobs + LIBRARY_QUEUE.unfinished_tasks + PUBLISH_QUEUE.unfinished_tasks
+
+
 @app.route("/api/health")
 def api_health():
-    return jsonify({"ok": True, "app": "Studio Native"})
+    return jsonify(
+        {
+            "ok": True,
+            "app": "Studio Native",
+            # Vem do build da imagem (release.yml); vazio fora do Docker.
+            "version": os.getenv("STUDIO_VERSION", ""),
+            "busy": active_work() > 0,
+        }
+    )
 
 
 @app.route("/api/generate", methods=["POST"])
