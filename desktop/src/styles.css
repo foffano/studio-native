@@ -2435,6 +2435,22 @@ input[type="range"] {
   background: var(--surface-2);
   transition: border-color 0.14s, background 0.14s;
 }
+.script-direction {
+  flex-wrap: wrap;
+}
+.script-direction__arrows {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 24px;
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+.script-direction__arrows input {
+  accent-color: var(--accent);
+}
 .script-direction.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);

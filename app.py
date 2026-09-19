@@ -1369,32 +1369,156 @@ def get_job(job_id):
         return dict(JOBS.get(job_id, {}))
 
 
+# Cada direcionamento e um formato de anuncio distinto, para o teste A/B
+# comparar abordagens de verdade. Por isso cada um define, alem da ideia, o tom,
+# a pessoa verbal, a estrutura da fala e o que NAO fazer -- o "evite" e o que
+# impede os formatos de convergirem para o mesmo roteiro generico.
 SCRIPT_DIRECTIONS = {
-    "problem_solution": (
-        "Use a estrutura problema -> solucao: comece por uma dor reconhecivel, "
-        "aumente brevemente a tensao e apresente o produto como o caminho pratico."
-    ),
-    "ugc_testimonial": (
-        "Escreva em estilo UGC/depoimento, em primeira pessoa, espontaneo e crivel, "
-        "como uma descoberta real. Nao invente resultados, numeros ou experiencia pessoal."
-    ),
-    "curiosity_hook": (
-        "Priorize um hook agressivo e curioso que interrompa a rolagem, usando contraste, "
-        "pergunta ou informacao incompleta, sem clickbait enganoso nem alegacoes falsas."
-    ),
-    "benefit_demo": (
-        "Foque beneficio e demonstracao: mostre o produto em uso, traduza caracteristicas "
-        "em ganho concreto e ajude o publico a visualizar o antes e depois sem promessas absolutas."
-    ),
+    "problem_solution": {
+        "idea": (
+            "PROBLEMA -> SOLUCAO. O video vende o alivio de uma dor concreta e "
+            "reconhecivel do dia a dia do publico."
+        ),
+        "tone": "empatico e direto, falando com o espectador em segunda pessoa (voce).",
+        "overlay": "nomeia a dor ou frustracao do publico, nao o produto.",
+        "structure": (
+            "(1) abra descrevendo uma situacao frustrante especifica, com detalhe "
+            "visual; (2) mostre em uma frase o custo de continuar assim; "
+            "(3) apresente o produto como a saida pratica e explique COMO ele resolve; "
+            "(4) feche com a CTA."
+        ),
+        "avoid": (
+            "primeira pessoa, relato pessoal, perguntas misteriosas e listas de "
+            "caracteristicas soltas."
+        ),
+    },
+    "ugc_testimonial": {
+        "idea": (
+            "UGC / DEPOIMENTO. Parece uma pessoa comum gravando no celular e "
+            "contando para os seguidores o que achou, nao um anuncio."
+        ),
+        "tone": (
+            "primeira pessoa (eu), coloquial, com expressoes faladas do dia a dia "
+            "(tipo 'gente', 'olha', 'serio'), frases curtas e ritmo de conversa."
+        ),
+        "overlay": "soa como fala pessoal ou reacao espontanea, em primeira pessoa.",
+        "structure": (
+            "(1) abra com uma confissao ou reacao pessoal; (2) conte como era antes "
+            "ou por que desconfiava; (3) descreva a impressao ao usar, com detalhes "
+            "sensoriais do que se ve no video; (4) feche recomendando como amiga(o), "
+            "com a CTA."
+        ),
+        "avoid": (
+            "tom de locutor ou vendedor, segunda pessoa dominante, numeros e "
+            "resultados inventados (fale de impressao, nao de dados)."
+        ),
+    },
+    "curiosity_hook": {
+        "idea": (
+            "HOOK CURIOSO. O video vive de uma lacuna de curiosidade: os primeiros "
+            "segundos prometem algo que so e revelado depois."
+        ),
+        "tone": "intrigante e energetico, com pausas dramaticas e frases de suspense.",
+        "overlay": (
+            "e uma pergunta, uma afirmacao contraintuitiva ou uma frase incompleta "
+            "que obriga a assistir ate o fim; nao entrega o produto."
+        ),
+        "structure": (
+            "(1) abra com uma afirmacao surpreendente, segredo ou pergunta que "
+            "ninguem espera; (2) segure a revelacao por uma ou duas frases; "
+            "(3) revele o produto como a resposta; (4) feche com a CTA."
+        ),
+        "avoid": (
+            "comecar pela dor, comecar citando o produto, primeira pessoa e "
+            "clickbait falso (a promessa do inicio precisa ser cumprida)."
+        ),
+    },
+    "benefit_demo": {
+        "idea": (
+            "BENEFICIO / DEMONSTRACAO. O video e uma demonstracao guiada: a "
+            "narracao acompanha o que aparece na tela e traduz recurso em ganho."
+        ),
+        "tone": (
+            "apresentador objetivo e animado, como review rapido, usando "
+            "'olha isso', 'repara', 've so'."
+        ),
+        "overlay": "destaca o principal beneficio ou resultado visivel do produto.",
+        "structure": (
+            "(1) abra ja mostrando o produto em acao; (2) passe por 2 ou 3 "
+            "beneficios concretos, cada um ligado a algo visivel; (3) diga para "
+            "quem ele e ideal; (4) feche com a CTA."
+        ),
+        "avoid": (
+            "comecar por problema ou dor, perguntas misteriosas, primeira pessoa e "
+            "promessas absolutas."
+        ),
+    },
 }
 
+# Angulos de abertura sorteados por item, para que as variacoes de um mesmo
+# formato nao comecem todas do mesmo jeito.
+HOOK_ANGLES = [
+    "pergunta direta ao espectador",
+    "afirmacao ousada ou contraintuitiva",
+    "cena especifica do cotidiano",
+    "contraste antes x depois",
+    "lista rapida (ex.: 3 motivos)",
+    "alerta sobre um erro comum",
+    "reacao de surpresa",
+    "ideia de presente ou ocasiao especial",
+    "comparacao com a alternativa comum",
+    "detalhe inesperado do produto",
+]
 
-def _direction_instruction(direction):
-    instruction = SCRIPT_DIRECTIONS.get(direction)
-    return f"\nDirecionamento obrigatorio deste lote: {instruction}\n" if instruction else ""
+CART_ARROWS_NOTE = (
+    "Este video tera setas animadas 'COMPRE AQUI' apontando para o carrinho "
+    "laranja, no canto inferior esquerdo da tela. A CTA final deve mandar tocar "
+    "no carrinho laranja AQUI EMBAIXO, aproveitando as setas."
+)
 
 
-def generate_phrases(n, theme, extra_tags=None, direction=None):
+def _direction_instruction(direction, part="speech"):
+    """Bloco do prompt com o formato do lote. `part` = "speech" inclui a
+    estrutura da narracao; "overlay" so o necessario para frase e legenda."""
+    d = SCRIPT_DIRECTIONS.get(direction)
+    if not d:
+        return ""
+    lines = [
+        f"\nFORMATO OBRIGATORIO DESTE LOTE: {d['idea']}",
+        f"- Tom: {d['tone']}",
+        f"- A frase da tela {d['overlay']}",
+    ]
+    if part == "speech":
+        lines.append(f"- Estrutura da narracao: {d['structure']}")
+    lines.append(f"- Evite neste formato: {d['avoid']}")
+    return "\n".join(lines) + "\n"
+
+
+def _variety_instruction(n, avoid=None):
+    """Distribui um angulo de abertura diferente por item e lista o que ja foi
+    gerado em outros lotes do mesmo job, para nada se repetir."""
+    angles = random.sample(HOOK_ANGLES, k=min(n, len(HOOK_ANGLES)))
+    lines = [
+        "\nVARIEDADE: cada item deve ser um teste diferente para o publico. "
+        "Use um angulo de abertura distinto por item:"
+    ]
+    for i in range(n):
+        lines.append(f"- item {i + 1}: {angles[i % len(angles)]}")
+    lines.append(
+        "Nenhum item pode repetir a primeira palavra, a estrutura da frase da tela "
+        "ou a frase de CTA de outro."
+    )
+    if avoid:
+        lines.append(
+            "Ja foram criados estes roteiros para o mesmo video; nao repita seus "
+            "ganchos, ideias nem expressoes:"
+        )
+        lines.extend(f'- "{a}"' for a in avoid[-12:])
+    return "\n".join(lines) + "\n"
+
+
+def generate_phrases(n, theme, extra_tags=None, direction=None, avoid=None,
+                     cart_arrows=False):
     """Chama a OpenRouter SOMENTE com texto e retorna n itens prontos para o post.
 
     Cada item traz a frase da tela, a legenda do post e as hashtags - tudo na
@@ -1420,8 +1544,10 @@ def generate_phrases(n, theme, extra_tags=None, direction=None):
     )
 
     user_prompt = (
-        f"{theme_part}\n{_direction_instruction(direction)}\n"
-        f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
+        f"{theme_part}\n{_direction_instruction(direction, 'overlay')}"
+        f"{_variety_instruction(n, avoid)}"
+        + (f"\n{CART_ARROWS_NOTE} A legenda do post pode reforcar isso.\n" if cart_arrows else "")
+        + f"\nGere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         '- "overlay": a frase que fica NA TELA do video, no maximo 120 caracteres '
         "(pode usar 1 ou 2 emojis);\n"
         '- "caption": a legenda do post, curta, no maximo 150 caracteres, '
@@ -1564,7 +1690,8 @@ def speech_word_count(text):
     return len(re.findall(r"\b[\wÀ-ÿ]+\b", str(text or ""), re.UNICODE))
 
 
-def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direction=None):
+def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direction=None,
+                                avoid=None, cart_arrows=False):
     """Gera n itens coerentes (overlay na tela + narracao + legenda do post),
     usando tecnicas de videos virais de TikTok e respeitando o limite de
     palavras compativel com a duracao do video. So texto vai para a IA."""
@@ -1588,21 +1715,35 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direc
         "e levar a pessoa ao carrinho laranja."
     )
 
+    # Sem formato definido, vale a estrutura generica de anuncio. Com formato, a
+    # estrutura dele manda -- impor as duas faria todos os lotes convergirem.
+    if direction in SCRIPT_DIRECTIONS:
+        structure = (
+            "Siga a estrutura e o tom do FORMATO OBRIGATORIO acima, e termine "
+            "SEMPRE com uma CTA explicita para clicar no carrinho laranja. "
+        )
+    else:
+        structure = (
+            "Estruture a fala nesta ordem: (1) GANCHO imediato que interrompe a rolagem; "
+            "(2) problema ou desejo do público; (3) apresentação do produto/solução com "
+            "benefícios concretos e linguagem de demonstração; (4) quebra de objeção, "
+            "prova percebida ou cenário de uso, sem inventar fatos; (5) última frase com "
+            "CTA explícita para clicar no carrinho laranja e conferir o produto agora. "
+        )
+
     user_prompt = (
-        f"{theme_part}\n{_direction_instruction(direction)}\n"
-        f"O video tem {video_duration:.1f} segundos e a narracao precisa ocupar praticamente todo esse tempo.\n"
+        f"{theme_part}\n{_direction_instruction(direction)}"
+        f"{_variety_instruction(n, avoid)}"
+        + (f"\n{CART_ARROWS_NOTE}\n" if cart_arrows else "")
+        + f"\nO video tem {video_duration:.1f} segundos e a narracao precisa ocupar praticamente todo esse tempo.\n"
         f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         "- \"overlay\": frase curta e impactante para FICAR NA TELA do video "
         "(maximo ~8 palavras, pode usar 1 emoji);\n"
         "- \"speech\": roteiro contínuo da NARRACAO, sem títulos ou marcações, "
         f"com OBRIGATORIAMENTE entre {words_min} e {words_max} palavras "
         f"(alvo ideal: {words_target}). Não entregue menos que {words_min}. "
-        "Estruture a fala nesta ordem: (1) GANCHO imediato que interrompe a rolagem; "
-        "(2) problema ou desejo do público; (3) apresentação do produto/solução com "
-        "benefícios concretos e linguagem de demonstração; (4) quebra de objeção, "
-        "prova percebida ou cenário de uso, sem inventar fatos; (5) última frase com "
-        "CTA explícita para clicar no carrinho laranja e conferir o produto agora. "
-        "Não escreva as palavras 'gancho', 'desenvolvimento' ou 'CTA'. Não use emojis;\n"
+        + structure
+        + "Não escreva as palavras 'gancho', 'desenvolvimento' ou 'CTA'. Não use emojis;\n"
         "- \"caption\": a legenda do post, curta, no maximo 150 caracteres, "
         "SEM hashtags dentro dela;\n"
         f"- \"hashtags\": no maximo {cap.MAX_HASHTAGS} hashtags relevantes, sem o "
@@ -1613,7 +1754,7 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direc
         "Sem explicacoes nem texto fora do JSON."
     )
 
-    content = _openrouter_chat(system_prompt, user_prompt, temperature=0.75)
+    content = _openrouter_chat(system_prompt, user_prompt, temperature=0.85)
     items = parse_overlay_speech(content, n)
     if not items:
         raise RuntimeError("A IA nao retornou overlay/speech validos.")
@@ -1821,7 +1962,86 @@ def compute_position(video_w, video_h, txt_w, txt_h, vertical, jitter=True):
     return (int(round(x)), int(round(y)))
 
 
-def render_video(src_path, text, out_path, options, audio_path=None):
+# Setas "COMPRE AQUI" apontando para o carrinho laranja do TikTok Shop. No app
+# do TikTok o link do produto aparece no canto inferior esquerdo, logo acima do
+# @usuario; as proporcoes abaixo apontam para ele num video 9:16. Ajuste aqui se
+# o layout do TikTok mudar.
+CART_ARROWS_X = 0.22        # centro das setas, fracao da largura
+CART_ARROWS_BOTTOM = 0.75   # ponta da seta mais baixa, fracao da altura
+CART_ARROWS_COLOR = (255, 92, 0)
+CART_ARROWS_PERIOD = 0.7    # segundos por pulo
+
+
+def _rgba_clip(img, duration):
+    arr = np.array(img)
+    clip = ImageClip(arr[:, :, :3]).with_duration(duration)
+    mask = ImageClip(arr[:, :, 3].astype("float64") / 255.0, is_mask=True)
+    return clip.with_mask(mask.with_duration(duration))
+
+
+def render_cart_arrows(video_w):
+    """Desenha o selo "COMPRE AQUI" e a pilha de setas (imagens separadas: so as
+    setas pulam, o selo fica parado e legivel)."""
+    font = load_text_font(max(18, int(video_w * 0.048)))
+    label = "COMPRE AQUI"
+    left, top, right, bottom = font.getbbox(label)
+    pad_x, pad_y = int(video_w * 0.03), int(video_w * 0.016)
+    border = max(2, video_w // 270)
+    pill_w = right - left + 2 * pad_x
+    pill_h = bottom - top + 2 * pad_y
+    pill = Image.new("RGBA", (pill_w + 2 * border, pill_h + 2 * border), (0, 0, 0, 0))
+    d = ImageDraw.Draw(pill)
+    d.rounded_rectangle(
+        (0, 0, pill.width - 1, pill.height - 1),
+        radius=pill.height // 2, fill=(255, 255, 255, 255),
+    )
+    d.rounded_rectangle(
+        (border, border, border + pill_w - 1, border + pill_h - 1),
+        radius=pill_h // 2, fill=CART_ARROWS_COLOR + (255,),
+    )
+    d.text((border + pad_x - left, border + pad_y - top), label,
+           font=font, fill=(255, 255, 255, 255))
+
+    # Tres chevrons para baixo, os de cima mais transparentes: da a sensacao de
+    # movimento mesmo num frame parado.
+    cw = int(video_w * 0.11)
+    ch = int(cw * 0.45)
+    gap = int(ch * 0.95)
+    stroke = max(4, int(video_w * 0.016))
+    outline = stroke + 2 * border
+    arrows = Image.new("RGBA", (cw + outline, 3 * gap + ch + outline), (0, 0, 0, 0))
+    for i, alpha in enumerate((110, 180, 255)):
+        layer = Image.new("RGBA", arrows.size, (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        y0 = outline // 2 + i * gap
+        pts = [(outline // 2, y0), (outline // 2 + cw // 2, y0 + ch),
+               (outline // 2 + cw, y0)]
+        ld.line(pts, fill=(255, 255, 255, alpha), width=outline, joint="curve")
+        ld.line(pts, fill=CART_ARROWS_COLOR + (alpha,), width=stroke, joint="curve")
+        arrows = Image.alpha_composite(arrows, layer)
+    return pill, arrows
+
+
+def cart_arrows_clips(video_w, video_h, duration):
+    pill, arrows = render_cart_arrows(video_w)
+    cx = int(video_w * CART_ARROWS_X)
+    amp = video_w * 0.022
+    arrows_top = int(video_h * CART_ARROWS_BOTTOM) - arrows.height - int(amp)
+    pill_top = arrows_top - pill.height - int(video_w * 0.01)
+    ax = max(0, cx - arrows.width // 2)
+    px = max(0, cx - pill.width // 2)
+
+    def bounce(t):
+        # |sin| = quique: desce rapido ate a ponta e volta.
+        return (ax, arrows_top + int(amp * abs(np.sin(np.pi * t / CART_ARROWS_PERIOD))))
+
+    return [
+        _rgba_clip(pill, duration).with_position((px, pill_top)),
+        _rgba_clip(arrows, duration).with_position(bounce),
+    ]
+
+
+def render_video(src_path, text, out_path, options, audio_path=None, cart_arrows=False):
     """Sobrepoe o texto (fonte arredondada + emojis coloridos) no video,
     100% local, usando uma imagem RGBA gerada com Pillow.
 
@@ -1880,7 +2100,10 @@ def render_video(src_path, text, out_path, options, audio_path=None):
         )
         txt_clip = txt_clip.with_position(pos)
 
-        final = CompositeVideoClip([base, txt_clip]).with_duration(target_dur)
+        layers = [base, txt_clip]
+        if cart_arrows:
+            layers += cart_arrows_clips(video.w, video.h, target_dur)
+        final = CompositeVideoClip(layers).with_duration(target_dur)
 
         if narration is not None:
             # Narracao como trilha principal (silencia o audio original do video).
@@ -1968,10 +2191,15 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
             batches = script_directions or [{"type": None, "count": num}]
             items = []
             for batch in batches:
-                items.extend(generate_overlay_and_speech(
+                arrows = bool(batch.get("cart_arrows"))
+                generated = generate_overlay_and_speech(
                     batch["count"], audio_theme, video_dur,
-                    extra_tags=extra_tags, direction=batch["type"]
-                ))
+                    extra_tags=extra_tags, direction=batch["type"],
+                    avoid=[i["overlay"] for i in items], cart_arrows=arrows,
+                )
+                for g in generated:
+                    g["cart_arrows"] = arrows
+                items.extend(generated)
 
             results = []
             total = len(items)
@@ -2011,6 +2239,7 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
                     render_video(
                         norm_path, item["overlay"], out_path, options,
                         audio_path=audio_path,
+                        cart_arrows=item.get("cart_arrows", False),
                     )
                 record = store.add_output(
                     file=out_name,
@@ -2045,10 +2274,15 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
             batches = script_directions or [{"type": None, "count": num}]
             phrases = []
             for batch in batches:
-                phrases.extend(generate_phrases(
+                arrows = bool(batch.get("cart_arrows"))
+                generated = generate_phrases(
                     batch["count"], theme, extra_tags=extra_tags,
-                    direction=batch["type"]
-                ))
+                    direction=batch["type"],
+                    avoid=[p["overlay"] for p in phrases], cart_arrows=arrows,
+                )
+                for g in generated:
+                    g["cart_arrows"] = arrows
+                phrases.extend(generated)
 
             results = []
             total = len(phrases)
@@ -2069,7 +2303,10 @@ def process_job(job_id, src_path, num, theme, options, audio_opts=None,
                         message=f"Renderizando video {i} de {total}...",
                         progress=int((i - 1) / total * 100),
                     )
-                    render_video(norm_path, phrase, out_path, options)
+                    render_video(
+                        norm_path, phrase, out_path, options,
+                        cart_arrows=item.get("cart_arrows", False),
+                    )
                 record = store.add_output(
                     file=out_name,
                     job_id=job_id,
@@ -2174,7 +2411,11 @@ def api_generate():
                 count = int(entry.get("count", 1))
             except (TypeError, ValueError):
                 count = 1
-            script_directions.append({"type": entry["type"], "count": max(1, min(count, 10))})
+            script_directions.append({
+                "type": entry["type"],
+                "count": max(1, min(count, 10)),
+                "cart_arrows": bool(entry.get("cart_arrows")),
+            })
         if script_directions:
             num = sum(x["count"] for x in script_directions)
 

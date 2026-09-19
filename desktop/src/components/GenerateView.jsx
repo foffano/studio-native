@@ -92,7 +92,10 @@ function metaChips(meta) {
     chips.push("Narração: " + meta.audioTheme);
   if (meta.scriptDirections?.length)
     chips.push(
-      "Roteiros: " + meta.scriptDirections.map((d) => `${d.label} (${d.count})`).join(", ")
+      "Roteiros: " +
+        meta.scriptDirections
+          .map((d) => `${d.label} (${d.count}${d.cartArrows ? ", com setas" : ""})`)
+          .join(", ")
     );
   chips.push("Altura: " + Math.round((meta.vertical ?? 0.5) * 100) + "%");
   chips.push("Fonte: " + meta.fontSize);
@@ -253,6 +256,8 @@ function GenerationForm({
   const [voiceSel, setVoiceSel] = useState("");
   const [audioTheme, setAudioTheme] = useState("");
   const [directions, setDirections] = useState({});
+  // Formatos que recebem as setas "COMPRE AQUI" apontando para o carrinho.
+  const [cartArrows, setCartArrows] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -341,6 +346,7 @@ function GenerationForm({
         type: d.key,
         label: d.title,
         count: directions[d.key],
+        cartArrows: !!cartArrows[d.key],
       })),
       fontSize: opts.fontSize,
       strokeWidth: opts.strokeWidth,
@@ -363,7 +369,13 @@ function GenerationForm({
     if (meta.scriptDirections.length) {
       fd.append(
         "script_directions",
-        JSON.stringify(meta.scriptDirections.map(({ type, count }) => ({ type, count })))
+        JSON.stringify(
+          meta.scriptDirections.map(({ type, count, cartArrows }) => ({
+            type,
+            count,
+            cart_arrows: cartArrows,
+          }))
+        )
       );
     }
     fd.append("font_size", String(meta.fontSize));
@@ -527,6 +539,22 @@ function GenerationForm({
                             <IconPlus width={14} height={14} />
                           </button>
                         </div>
+                      )}
+                      {checked && (
+                        <label className="script-direction__arrows">
+                          <input
+                            type="checkbox"
+                            checked={!!cartArrows[direction.key]}
+                            disabled={busy}
+                            onChange={(e) =>
+                              setCartArrows((all) => ({
+                                ...all,
+                                [direction.key]: e.target.checked,
+                              }))
+                            }
+                          />
+                          Setas “compre aqui” apontando para o carrinho laranja
+                        </label>
                       )}
                     </div>
                   );
