@@ -1970,7 +1970,7 @@ def compute_position(video_w, video_h, txt_w, txt_h, vertical, jitter=True):
 # @usuario; as proporcoes abaixo apontam para ele num video 9:16. Ajuste aqui se
 # o layout do TikTok mudar.
 CART_ARROWS_X = 0.22        # centro das setas, fracao da largura
-CART_ARROWS_BOTTOM = 0.69   # ponta da seta mais baixa, fracao da altura
+CART_ARROWS_BOTTOM = 0.75   # ponta da seta mais baixa, fracao da altura
 CART_ARROWS_COLOR = (255, 92, 0)
 CART_ARROWS_PERIOD = 0.7    # segundos por pulo
 
