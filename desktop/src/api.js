@@ -462,3 +462,39 @@ export async function updateLibraryFolder(id, folderId) {
   });
   return jsonOrThrow(res);
 }
+
+export function downloadOutput(file) {
+  // `download=1`: o backend manda como anexo, com o nome da frase.
+  const a = document.createElement("a");
+  a.href = apiUrl(`/outputs/${file}?download=1`);
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+export async function downloadOutputsZip(ids) {
+  // Vários de uma vez viram um zip: o navegador bloqueia downloads em sequência.
+  const res = await req(apiUrl("/api/outputs/download"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const erro = await res.json().catch(() => ({}));
+    throw new Error(erro.error || "Não consegui preparar o zip.");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `studio-native-${ids.length}-videos.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function marcarPublicado(id, publicado = true) {
+  return updateOutput(id, { published_manually: publicado });
+}

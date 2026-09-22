@@ -1,8 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
-import { IconStar, IconTrash, IconPlus } from "./Icons.jsx";
-import { getOutputs, libraryThumbnailUrl, libraryVideoUrl, outputUrl } from "../api.js";
+import { IconStar, IconTrash, IconPlus, IconCheck, IconDownload } from "./Icons.jsx";
+import {
+  deleteOutput,
+  downloadOutput,
+  downloadOutputsZip,
+  getOutputs,
+  libraryThumbnailUrl,
+  libraryVideoUrl,
+  marcarPublicado,
+  outputUrl,
+} from "../api.js";
 
 function fmtDur(sec) {
   if (!sec) return "";
@@ -41,6 +50,7 @@ export default function SourcePanel({
 }) {
   const [saidas, setSaidas] = useState(null);
   const [erro, setErro] = useState("");
+  const [ocupado, setOcupado] = useState("");
   const caixa = useRef(null);
 
   // No celular este painel cobre a tela inteira, e o botao de fechar e a unica
@@ -77,6 +87,49 @@ export default function SourcePanel({
   }, [item?.id]);
 
   if (!item) return null;
+
+  const recarregarSaidas = () =>
+    getOutputs({ library_id: item.id, limit: 200 })
+      .then((r) => setSaidas(r.items || []))
+      .catch((e) => setErro(e.message));
+
+  const marcar = async (o) => {
+    setOcupado(o.id);
+    try {
+      await marcarPublicado(o.id, !o.published_manually);
+      await recarregarSaidas();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setOcupado("");
+    }
+  };
+
+  const apagarSaida = async (o) => {
+    // O arquivo sai do disco: nao da para desfazer.
+    if (!window.confirm("Apagar este vídeo produzido? Não dá para desfazer."))
+      return;
+    setOcupado(o.id);
+    try {
+      await deleteOutput(o.id);
+      await recarregarSaidas();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setOcupado("");
+    }
+  };
+
+  const baixarTodos = async () => {
+    setOcupado("zip");
+    try {
+      await downloadOutputsZip((saidas || []).map((o) => o.id));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setOcupado("");
+    }
+  };
 
   const detalhes = [
     fmtDur(item.duration_sec),
@@ -205,6 +258,16 @@ export default function SourcePanel({
           : saidas.length === 0
           ? "Produzidos"
           : `Produzidos · ${saidas.length}`}
+        {(saidas || []).length > 1 && (
+          <button
+            className="btn btn--xs btn--ghost"
+            disabled={ocupado === "zip"}
+            onClick={baixarTodos}
+          >
+            <IconDownload width={13} height={13} />
+            {ocupado === "zip" ? "Preparando..." : "Baixar todos"}
+          </button>
+        )}
       </h3>
 
       <div className="painel__lista">
@@ -240,6 +303,36 @@ export default function SourcePanel({
                 {o.duration ? ` · ${Math.round(o.duration)}s` : ""}
                 {o.audio_mode ? " · com narração" : ""}
               </p>
+              {o.published_manually && (
+                <p className="saida__marcado">
+                  <IconCheck width={13} height={13} /> Marcado como publicado
+                </p>
+              )}
+              <div className="saida__acoes">
+                <button
+                  className="btn btn--xs btn--ghost"
+                  onClick={() => downloadOutput(o.file)}
+                >
+                  <IconDownload width={13} height={13} />
+                  Baixar
+                </button>
+                <button
+                  className="btn btn--xs btn--ghost"
+                  disabled={ocupado === o.id}
+                  onClick={() => marcar(o)}
+                >
+                  <IconCheck width={13} height={13} />
+                  {o.published_manually ? "Desmarcar" : "Já publiquei"}
+                </button>
+                <button
+                  className="btn btn--xs btn--danger"
+                  disabled={ocupado === o.id}
+                  onClick={() => apagarSaida(o)}
+                  title="Apagar do catálogo e do disco"
+                >
+                  <IconTrash width={13} height={13} />
+                </button>
+              </div>
               <PublishToTikTok
                 outputId={o.id}
                 publicacaoInicial={(o.publications || [])[0] || null}

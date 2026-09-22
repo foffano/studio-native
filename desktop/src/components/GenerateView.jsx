@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  downloadOutput,
   libraryVideoUrl,
   libraryThumbnailUrl,
   outputUrl,
@@ -732,9 +733,12 @@ function ResultCard({ r, index, isNew }) {
         <p className="rcard__phrase">{r.phrase}</p>
         {r.speech && <p className="rcard__speech">🎙 {r.speech}</p>}
         <CaptionEditor result={r} />
-        <a className="btn btn--ghost btn--block" href={url} download={r.file}>
+        <button
+          className="btn btn--ghost btn--block"
+          onClick={() => downloadOutput(r.file)}
+        >
           <IconDownload width={16} height={16} /> Baixar
-        </a>
+        </button>
         {r.id && <PublishToTikTok outputId={r.id} />}
       </div>
     </div>

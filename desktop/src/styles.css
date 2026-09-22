@@ -1034,6 +1034,55 @@ input[type="range"] {
   background: var(--surface);
   box-shadow: var(--shadow);
 }
+.rcard--selecionado {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+/* A caixa de selecao fica no topo do card, fora do video: sobre o player ela
+   competiria com os controles de reproducao. */
+.rcard__selecao {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.rcard__selecao input {
+  accent-color: var(--accent);
+}
+.rcard__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--space-2) 0;
+}
+.rcard__marcado {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 var(--space-2);
+  color: var(--ok, #4ade80);
+  font-size: var(--text-sm);
+}
+.selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+}
+.selection-bar__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .rcard__media {
   position: relative;
   background: #000;
@@ -2165,6 +2214,27 @@ input[type="range"] {
   margin: 0;
   font-size: var(--text-sm);
 }
+.saida__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--space-2) 0;
+}
+.saida__marcado {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: var(--space-2) 0 0;
+  color: var(--ok, #4ade80);
+  font-size: var(--text-sm);
+}
+.painel__secao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .painel__lista {
   margin-top: var(--space-4);
   display: flex;

@@ -134,6 +134,10 @@ def _migrar(con):
     if "folder_id" not in colunas:
         con.execute("ALTER TABLE outputs ADD COLUMN folder_id TEXT DEFAULT ''")
         con.execute("CREATE INDEX IF NOT EXISTS idx_outputs_folder ON outputs(folder_id)")
+    # Publicacao marcada a mao: quem posta o video fora do app (direto no
+    # aplicativo do TikTok) precisa de um jeito de dizer que ja publicou.
+    if "manual_published_at" not in colunas:
+        con.execute("ALTER TABLE outputs ADD COLUMN manual_published_at TEXT DEFAULT ''")
 
 
 def _rows(sql, params=()):
@@ -166,6 +170,8 @@ def _decode_output(row):
     except (ValueError, TypeError):
         out["hashtags"] = []
     out["audio_mode"] = bool(out.get("audio_mode"))
+    out["manual_published_at"] = out.get("manual_published_at") or ""
+    out["published_manually"] = bool(out["manual_published_at"])
     return out
 
 
@@ -268,7 +274,9 @@ def _attach_publications(items):
         by_output.setdefault(p["output_id"], []).append(p)
     for item in items:
         item["publications"] = by_output.get(item["id"], [])
-        item["published"] = any(
+        # Marcar a mao vale tanto quanto o TikTok confirmar: o video foi ao ar
+        # do mesmo jeito, so que por fora do app.
+        item["published"] = bool(item.get("manual_published_at")) or any(
             p["state"] in PUBLISHED_STATES for p in item["publications"]
         )
         item["awaiting"] = not item["published"] and any(
@@ -285,7 +293,7 @@ def _attach_publications(items):
 # `update_output` agora recusa campo desconhecido em vez de ignora-lo.
 UPDATABLE_OUTPUT_FIELDS = {
     "caption", "hashtags", "phrase", "status", "theme", "folder_id",
-    "library_id",
+    "library_id", "manual_published_at",
 }
 
 
@@ -356,8 +364,11 @@ def metrics():
     week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     month = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
 
+    # Um video publicado pelo app E marcado a mao continua sendo um video.
     published = _count(
-        f"SELECT COUNT(DISTINCT output_id) FROM publications WHERE state IN ({marks_pub})",
+        f"""SELECT COUNT(*) FROM outputs WHERE manual_published_at != ''
+               OR id IN (SELECT output_id FROM publications
+                         WHERE state IN ({marks_pub}))""",
         PUBLISHED_STATES,
     )
     total = _count("SELECT COUNT(*) FROM outputs")
@@ -378,9 +389,10 @@ def metrics():
         "produced_7d": _count("SELECT COUNT(*) FROM outputs WHERE created_at >= ?", (week,)),
         "produced_30d": _count("SELECT COUNT(*) FROM outputs WHERE created_at >= ?", (month,)),
         "published_7d": _count(
-            f"SELECT COUNT(DISTINCT output_id) FROM publications "
-            f"WHERE state IN ({marks_pub}) AND published_at >= ?",
-            PUBLISHED_STATES + (week,),
+            f"""SELECT COUNT(*) FROM outputs WHERE manual_published_at >= ?
+                   OR id IN (SELECT output_id FROM publications
+                             WHERE state IN ({marks_pub}) AND published_at >= ?)""",
+            (week,) + PUBLISHED_STATES + (week,),
         ),
         "accounts": _count("SELECT COUNT(*) FROM accounts"),
     }

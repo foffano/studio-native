@@ -11,6 +11,8 @@ import tempfile
 import threading
 import time
 import queue
+import unicodedata
+import zipfile
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -23,6 +25,7 @@ from flask import (
     Flask,
     jsonify,
     request,
+    send_file,
     send_from_directory,
     session,
 )
@@ -2549,8 +2552,86 @@ def api_status(job_id):
     return jsonify(job)
 
 
+def output_download_name(item, fallback):
+    """Nome do arquivo salvo: a frase do video, sem acento nem simbolo, com o
+    id no fim para dois videos parecidos nunca colidirem no mesmo download."""
+    frase = unicodedata.normalize("NFD", str(item.get("phrase") or ""))
+    frase = "".join(c for c in frase if unicodedata.category(c) != "Mn")
+    base = re.sub(r"[^\w\s-]", "", frase, flags=re.ASCII)
+    base = re.sub(r"[\s_-]+", "-", base).strip("-").lower()[:60]
+    oid = str(item.get("id") or "")[:8]
+    if not base:
+        return fallback
+    return f"{base}-{oid}.mp4" if oid else f"{base}.mp4"
+
+
+@app.route("/api/outputs/download", methods=["POST"])
+def api_outputs_download_zip():
+    """Baixa varios videos de uma vez, num zip. Sem isto, baixar 10 videos
+    significa 10 cliques -- e o navegador bloqueia downloads em sequencia."""
+    data = request.get_json(silent=True) or {}
+    ids = [str(i) for i in (data.get("ids") or [])][:200]
+    if not ids:
+        return jsonify({"error": "Nenhum video selecionado."}), 400
+
+    escolhidos = []
+    for oid in ids:
+        item = store.get_output(oid)
+        if item and (OUTPUT_DIR / item["file"]).exists():
+            escolhidos.append(item)
+    if not escolhidos:
+        return jsonify({"error": "Os videos selecionados nao estao mais em disco."}), 404
+
+    # Download interrompido no meio deixa o zip para tras (o call_on_close
+    # abaixo nao roda). Uma varredura barata na proxima vez evita que o disco
+    # va enchendo de sobras.
+    for velho in UPLOAD_DIR.glob("studio-native-*.zip"):
+        try:
+            if time.time() - velho.stat().st_mtime > 3600:
+                velho.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    # O zip vai para o disco temporario, e nao para a memoria: dez videos de
+    # 50 MB somam meio giga, e o app tambem renderiza enquanto isso.
+    tmp = tempfile.NamedTemporaryFile(
+        prefix="studio-native-", suffix=".zip", dir=UPLOAD_DIR, delete=False
+    )
+    tmp.close()
+    usados = set()
+    try:
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as z:
+            for item in escolhidos:
+                nome = output_download_name(item, item["file"])
+                if nome in usados:  # mesma frase, ids diferentes
+                    nome = f"{Path(nome).stem}-{item['id'][:8]}.mp4"
+                usados.add(nome)
+                z.write(OUTPUT_DIR / item["file"], arcname=nome)
+        resp = send_file(
+            tmp.name,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"studio-native-{datetime.now().strftime('%Y%m%d-%H%M')}.zip",
+        )
+        # O arquivo so pode sumir depois de enviado; ate la ele e o corpo da
+        # resposta.
+        resp.call_on_close(lambda: Path(tmp.name).unlink(missing_ok=True))
+        return resp
+    except BaseException:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+
+
 @app.route("/outputs/<path:filename>")
 def outputs(filename):
+    # `?download=1`: o navegador salva em vez de abrir o player, com o nome da
+    # frase em vez do id interno.
+    if request.args.get("download"):
+        item = store.get_output_by_file(filename) or {}
+        return send_from_directory(
+            OUTPUT_DIR, filename, as_attachment=True,
+            download_name=output_download_name(item, filename),
+        )
     return send_from_directory(OUTPUT_DIR, filename)
 
 
@@ -2604,6 +2685,13 @@ def api_output_patch(output_id):
         fields["hashtags"] = cap.normalize_hashtags(data.get("hashtags"))
     if "status" in data:
         fields["status"] = str(data.get("status") or "pronto")
+    if "published_manually" in data:
+        # Quem posta o video direto no app do TikTok marca aqui. Desmarcar
+        # limpa a data, para um clique errado nao virar registro permanente.
+        fields["manual_published_at"] = (
+            datetime.now(timezone.utc).isoformat()
+            if data.get("published_manually") else ""
+        )
     if "folder_id" in data:
         fid = str(data.get("folder_id") or "")
         # Pasta inexistente vira "sem pasta", mesmo destino de quem estava numa
