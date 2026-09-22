@@ -1970,7 +1970,7 @@ def compute_position(video_w, video_h, txt_w, txt_h, vertical, jitter=True):
 # @usuario; as proporcoes abaixo apontam para ele num video 9:16. Ajuste aqui se
 # o layout do TikTok mudar.
 CART_ARROWS_X = 0.22        # centro das setas, fracao da largura
-CART_ARROWS_BOTTOM = 0.75   # ponta da seta mais baixa, fracao da altura
+CART_ARROWS_BOTTOM = 0.69   # ponta da seta mais baixa, fracao da altura
 CART_ARROWS_COLOR = (255, 92, 0)
 CART_ARROWS_PERIOD = 0.7    # segundos por pulo
 
@@ -1984,12 +1984,15 @@ def _rgba_clip(img, duration):
 
 def render_cart_arrows(video_w):
     """Desenha o selo "COMPRE AQUI" e a pilha de setas (imagens separadas: so as
-    setas pulam, o selo fica parado e legivel)."""
-    font = load_text_font(max(18, int(video_w * 0.048)))
+    setas pulam, o selo fica parado e legivel).
+
+    As proporcoes sao ~0.7 das originais: o selo em tamanho cheio disputava a
+    atencao com a frase do video em vez de apenas apontar o carrinho."""
+    font = load_text_font(max(13, int(video_w * 0.033)))
     label = "COMPRE AQUI"
     left, top, right, bottom = font.getbbox(label)
-    pad_x, pad_y = int(video_w * 0.03), int(video_w * 0.016)
-    border = max(2, video_w // 270)
+    pad_x, pad_y = int(video_w * 0.021), int(video_w * 0.011)
+    border = max(1, video_w // 400)
     pill_w = right - left + 2 * pad_x
     pill_h = bottom - top + 2 * pad_y
     pill = Image.new("RGBA", (pill_w + 2 * border, pill_h + 2 * border), (0, 0, 0, 0))
@@ -2007,10 +2010,10 @@ def render_cart_arrows(video_w):
 
     # Tres chevrons para baixo, os de cima mais transparentes: da a sensacao de
     # movimento mesmo num frame parado.
-    cw = int(video_w * 0.11)
+    cw = int(video_w * 0.075)
     ch = int(cw * 0.45)
     gap = int(ch * 0.95)
-    stroke = max(4, int(video_w * 0.016))
+    stroke = max(3, int(video_w * 0.011))
     outline = stroke + 2 * border
     arrows = Image.new("RGBA", (cw + outline, 3 * gap + ch + outline), (0, 0, 0, 0))
     for i, alpha in enumerate((110, 180, 255)):
@@ -2028,7 +2031,7 @@ def render_cart_arrows(video_w):
 def cart_arrows_clips(video_w, video_h, duration):
     pill, arrows = render_cart_arrows(video_w)
     cx = int(video_w * CART_ARROWS_X)
-    amp = video_w * 0.022
+    amp = video_w * 0.015
     arrows_top = int(video_h * CART_ARROWS_BOTTOM) - arrows.height - int(amp)
     pill_top = arrows_top - pill.height - int(video_w * 0.01)
     ax = max(0, cx - arrows.width // 2)
