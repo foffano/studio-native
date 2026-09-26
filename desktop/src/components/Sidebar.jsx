@@ -12,7 +12,7 @@ import {
 } from "./Icons.jsx";
 
 /** Item de navegação com ícone, rótulo e contagem opcional. */
-function Item({ icone, rotulo, rotuloCurto, principal, contagem, ativo, onClick }) {
+function Item({ icone, rotulo, rotuloCurto, principal, contagem, selo, ativo, onClick }) {
   return (
     <button
       className={
@@ -29,6 +29,7 @@ function Item({ icone, rotulo, rotuloCurto, principal, contagem, ativo, onClick 
       <span className="navitem__txt">{rotulo}</span>
       {rotuloCurto && <span className="navitem__curto">{rotuloCurto}</span>}
       {contagem > 0 && <span className="navitem__num">{contagem}</span>}
+      {selo && <span className="navitem__num">{selo}</span>}
     </button>
   );
 }
@@ -52,6 +53,9 @@ export default function Sidebar({
   contagens,
   pastas,
   contagensProduzidos,
+  emProducao,
+  geracaoAberta,
+  onAbrirGeracao,
 }) {
   const [pastasAbertas, setPastasAbertas] = useState(true);
 
@@ -82,6 +86,30 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar__rolagem">
+        {/* Gerações rodando no servidor. Aparece só enquanto há alguma: é o
+            caminho de volta à tela de progresso depois de navegar para outro
+            lugar, e a forma de alternar entre várias gerações simultâneas.
+            Ao terminar, a geração sai daqui -- os vídeos continuam no painel
+            do vídeo-fonte, na Biblioteca. No celular, só a mais recente vai
+            para o rodapé, para não empurrar a navegação para fora. */}
+        {(emProducao || []).length > 0 && (
+          <>
+            <div className="nav__label">Em produção</div>
+            {emProducao.map((g, i) => (
+              <Item
+                key={g.id}
+                icone={<span className="spinner spinner--sm" />}
+                rotulo={g.titulo}
+                rotuloCurto="Gerando"
+                principal={i === 0}
+                selo={g.progresso + "%"}
+                ativo={geracaoAberta === g.id}
+                onClick={() => onAbrirGeracao(g.id)}
+              />
+            ))}
+          </>
+        )}
+
         <div className="nav__label">Biblioteca</div>
         <Item
           icone={<IconVideo />}

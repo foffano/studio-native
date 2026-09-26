@@ -6,7 +6,7 @@ import ProducedView from "./components/ProducedView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
 import { criarPasta, getConfig, getLibrary, importHistoryToBackend } from "./api.js";
-import { getEntry, loadHistory } from "./lib/history.js";
+import { getEntry, getEntryTitle, loadHistory } from "./lib/history.js";
 import {
   subscribeGeneration,
   resumeRunningGenerations,
@@ -91,6 +91,27 @@ export default function App() {
   }, [activeChatId, historyVersion]);
 
 
+  // Gerações em andamento, para a barra lateral oferecer o caminho de volta à
+  // tela de progresso. Sem isso, sair da tela de geração deixava o job rodando
+  // no servidor mas sem nenhum botão que levasse de volta a ele.
+  const emProducao = React.useMemo(
+    () =>
+      loadHistory()
+        .filter((e) => e.status === "running")
+        .map((e) => ({
+          id: e.id,
+          titulo: getEntryTitle(e),
+          progresso: Math.round(e.progress || 0),
+        })),
+    [historyVersion]
+  );
+
+  const abrirGeracao = (id) => {
+    setActiveChatId(id);
+    setActiveEntry(getEntry(id));
+    setDestino({ area: "gerar" });
+  };
+
   const handleGenerationStarted = (jobId, entry) => {
     setActiveChatId(jobId);
     setActiveEntry(entry);
@@ -161,6 +182,9 @@ export default function App() {
         contagens={navDados.contagens}
         pastas={navDados.pastas}
         contagensProduzidos={navDados.metrics}
+        emProducao={emProducao}
+        geracaoAberta={destino.area === "gerar" ? activeChatId : null}
+        onAbrirGeracao={abrirGeracao}
       />
 
       <main className="content">
