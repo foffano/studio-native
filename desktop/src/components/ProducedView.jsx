@@ -10,6 +10,9 @@ import {
 } from "../api.js";
 import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
+import ShopPublishDialog from "./ShopPublishDialog.jsx";
+import ShopStatusLine, { publicacaoDaApi } from "./ShopStatusLine.jsx";
+import { ProdutoDoVideo } from "./ProductPicker.jsx";
 import { IconCheck, IconDownload, IconTrash } from "./Icons.jsx";
 
 /**
@@ -45,6 +48,7 @@ export default function ProducedView({ secao = "todos", folderId = null }) {
   // selecionar em duas buscas diferentes e baixar tudo de uma vez.
   const [selecao, setSelecao] = useState(() => new Set());
   const [ocupado, setOcupado] = useState("");
+  const [shop, setShop] = useState(false);
 
   const buscar = async () => {
     // `folderId` vazio e um filtro legitimo ("sem pasta"), entao o teste e
@@ -261,6 +265,14 @@ export default function ProducedView({ secao = "todos", folderId = null }) {
             <button
               className="btn btn--xs btn--ghost"
               disabled={!!ocupado}
+              onClick={() => setShop(true)}
+              title="Publicar com produto pela Central do Vendedor, um por vez"
+            >
+              TikTok Shop
+            </button>
+            <button
+              className="btn btn--xs btn--ghost"
+              disabled={!!ocupado}
               onClick={() => marcarSelecionados(true)}
             >
               <IconCheck width={14} height={14} />
@@ -291,6 +303,17 @@ export default function ProducedView({ secao = "todos", folderId = null }) {
             </button>
           </div>
         </div>
+      )}
+
+      {shop && (
+        <ShopPublishDialog
+          outputs={selecionados}
+          onClose={() => setShop(false)}
+          onDone={async () => {
+            setSelecao(new Set());
+            await buscar();
+          }}
+        />
       )}
 
       {erro && <p style={{ color: "#f87171" }}>{erro}</p>}
@@ -419,9 +442,15 @@ function CartaoProduzido({ output, selecionado, onSelecionar, onMudou, onErro })
           </button>
         </div>
 
+        <ProdutoDoVideo
+          kind="output"
+          refId={output.id}
+          vinculos={output.shop_products}
+        />
+        <ShopStatusLine publications={output.publications} />
         <PublishToTikTok
           outputId={output.id}
-          publicacaoInicial={(output.publications || [])[0] || null}
+          publicacaoInicial={publicacaoDaApi(output.publications)}
         />
       </div>
     </div>

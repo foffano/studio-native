@@ -42,6 +42,7 @@ from moviepy import (
 import auth
 import captions as cap
 import secretbox
+import seller
 import store
 import tiktok
 
@@ -883,6 +884,7 @@ secretbox.init_secretbox(USER_DATA_DIR)
 purgar_lixeira()
 discard_orphan_uploads()
 recover_library_on_startup()
+seller.init(store, USER_DATA_DIR, OUTPUT_DIR)
 
 
 def find_system_font():
@@ -2370,7 +2372,12 @@ def active_work():
     do prod-01 so troca de versao quando isto da zero."""
     with JOBS_LOCK:
         jobs = sum(1 for j in JOBS.values() if j.get("status") not in ("done", "error"))
-    return jobs + LIBRARY_QUEUE.unfinished_tasks + PUBLISH_QUEUE.unfinished_tasks
+    return (
+        jobs
+        + LIBRARY_QUEUE.unfinished_tasks
+        + PUBLISH_QUEUE.unfinished_tasks
+        + seller.busy()
+    )
 
 
 @app.route("/api/health")
@@ -2790,10 +2797,13 @@ def api_library_list():
         items = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)
 
     counts = store.counts_by_library()
+    produtos = store.product_links("library")
     for item in items:
         c = counts.get(item.get("id")) or {}
         item["produced_count"] = c.get("produced", 0)
         item["published_count"] = c.get("published", 0)
+        # {loja: product_id} -- o produto do video-fonte em cada loja.
+        item["shop_products"] = produtos.get(item.get("id"), {})
     metrics = library_metrics()
     metrics.update(store.metrics())
 
@@ -3529,7 +3539,11 @@ def api_output_publish(output_id):
     # que esta "aguardando" e permitido de proposito: a notificacao pode nao ter
     # aparecido na caixa de entrada, e ai reenviar e a unica saida.
     for p in store.list_publications(limit=500):
-        if p["output_id"] == output_id and p["state"] in store.PENDING_STATES:
+        if (
+            p["output_id"] == output_id
+            and p.get("platform") != seller.PLATFORM
+            and p["state"] in store.PENDING_STATES
+        ):
             return jsonify({"error": "Este video ja esta sendo enviado."}), 409
 
     pub = store.add_publication(
@@ -3557,6 +3571,258 @@ def api_publication_get(pub_id):
     if not pub:
         return jsonify({"error": "Publicacao nao encontrada"}), 404
     return jsonify(_publication_view(pub))
+
+
+# ---------------------------------------------------------------------------
+# TikTok Shop pela Central do Vendedor (seller.py)
+# ---------------------------------------------------------------------------
+# O navegador roda aqui no servidor; a tela chega por /frame e o mouse e o
+# teclado de quem olha voltam por /input. E assim que se faz o login e que se
+# resolve a verificacao anti-robo, ja que o servidor nao tem monitor.
+
+def _shop_item_view(pub):
+    out = dict(pub)
+    out["shop_name"] = seller.shop_name(pub["shop"]) if pub.get("shop") else ""
+    output = store.get_output(pub["output_id"]) or {}
+    out["output"] = {
+        "id": output.get("id"),
+        "file": output.get("file"),
+        "phrase": output.get("phrase", ""),
+        "caption": output.get("caption", ""),
+        "library_id": output.get("library_id", ""),
+    }
+    return out
+
+
+@app.route("/api/shop/status", methods=["GET"])
+def api_shop_status():
+    return jsonify(seller.status())
+
+
+@app.route("/api/shop/browser", methods=["POST"])
+def api_shop_browser_open():
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify(seller.open_browser(str(data.get("shop") or "") or None))
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+@app.route("/api/shop/shops", methods=["POST"])
+def api_shop_add():
+    """Loja nova: abre o navegador num perfil vazio, para o login."""
+    chave = seller.add_shop()
+    return jsonify({"shop": chave, "status": seller.status()})
+
+
+@app.route("/api/shop/shops/<shop>", methods=["DELETE"])
+def api_shop_remove(shop):
+    try:
+        seller.remove_shop(shop)
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify(seller.status())
+
+
+@app.route("/api/shop/browser/close", methods=["POST"])
+def api_shop_browser_close():
+    return jsonify(seller.close_browser())
+
+
+@app.route("/api/shop/browser/frame", methods=["GET"])
+def api_shop_browser_frame():
+    quadro = seller.frame()
+    if not quadro:
+        return jsonify({"error": "Aguardando a primeira imagem do navegador"}), 425
+    resp = app.response_class(quadro, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+SHOP_INPUT_TYPES = {"click", "down", "up", "move", "wheel", "text", "key", "select_page", "navigate"}
+
+
+@app.route("/api/shop/browser/input", methods=["POST"])
+def api_shop_browser_input():
+    data = request.get_json(silent=True) or {}
+    if data.get("type") not in SHOP_INPUT_TYPES:
+        return jsonify({"error": "Comando invalido"}), 400
+    comando = {"type": data["type"]}
+    for chave in ("x", "y", "delta_x", "delta_y"):
+        if chave in data:
+            try:
+                comando[chave] = max(-5000.0, min(5000.0, float(data[chave])))
+            except (TypeError, ValueError):
+                return jsonify({"error": f"{chave} invalido"}), 400
+    if data.get("button") in ("left", "right", "middle"):
+        comando["button"] = data["button"]
+    if data.get("action") in ("back", "reload", "home"):
+        comando["action"] = data["action"]
+    if isinstance(data.get("text"), str):
+        comando["text"] = data["text"][:2000]
+    if isinstance(data.get("key"), str):
+        comando["key"] = data["key"][:80]
+    if isinstance(data.get("page_id"), str):
+        comando["page_id"] = data["page_id"][:64]
+    if isinstance(data.get("path"), list):
+        caminho = []
+        for ponto in data["path"][:120]:
+            try:
+                x, y, atraso = (float(v) for v in ponto)
+            except (TypeError, ValueError):
+                return jsonify({"error": "path invalido"}), 400
+            caminho.append((x, y, max(0.0, min(1000.0, atraso))))
+        comando["path"] = caminho
+    try:
+        seller.send_input(comando)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 409
+    return ("", 204)
+
+
+@app.route("/api/shop/attention", methods=["POST"])
+def api_shop_attention():
+    data = request.get_json(silent=True) or {}
+    try:
+        seller.reply(str(data.get("action") or ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(seller.status())
+
+
+@app.route("/api/shop/recording", methods=["POST"])
+def api_shop_recording():
+    data = request.get_json(silent=True) or {}
+    return jsonify(seller.set_recording(bool(data.get("on"))))
+
+
+@app.route("/api/shop/recording/snapshot", methods=["POST"])
+def api_shop_recording_snapshot():
+    try:
+        seller.snapshot()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 409
+    return ("", 204)
+
+
+@app.route("/api/shop/recording/download", methods=["GET"])
+def api_shop_recording_download():
+    dados, nome = seller.recording_zip()
+    if not dados:
+        return jsonify({"error": "Nenhuma gravação ainda."}), 404
+    resp = app.response_class(dados, mimetype="application/zip")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{nome}"'
+    return resp
+
+
+@app.route("/api/shop/products", methods=["GET"])
+def api_shop_products():
+    todos = request.args.get("all") == "1"
+    loja = request.args.get("shop") or None
+    return jsonify({
+        "items": store.list_shop_products(shop=loja, include_inactive=todos),
+        "shops": [{"key": k, "name": seller.shop_name(k)} for k in seller.shop_keys()],
+        "sync": seller.status()["products_sync"],
+    })
+
+
+@app.route("/api/shop/products/sync", methods=["POST"])
+def api_shop_products_sync():
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify(seller.request_sync(str(data.get("shop") or "") or None))
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+@app.route("/api/shop/products/<product_id>/thumb", methods=["GET"])
+def api_shop_product_thumb(product_id):
+    caminho = seller.thumb_path(product_id)
+    if not caminho:
+        return ("", 404)
+    resp = send_file(caminho, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "private, max-age=86400"
+    return resp
+
+
+@app.route("/api/shop/accounts/<handle>/avatar", methods=["GET"])
+def api_shop_account_avatar(handle):
+    caminho = seller.avatar_path(handle)
+    if not caminho:
+        return ("", 404)
+    resp = send_file(caminho, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "private, max-age=86400"
+    return resp
+
+
+@app.route("/api/shop/links", methods=["PUT"])
+def api_shop_link():
+    """Vincula (ou desvincula, com product_id vazio) um produto a um video."""
+    data = request.get_json(silent=True) or {}
+    kind = data.get("kind")
+    ref_id = str(data.get("ref_id") or "")
+    loja = str(data.get("shop") or "")
+    product_id = str(data.get("product_id") or "").strip()
+    if kind not in ("library", "output") or not ref_id or not seller.shop_exists(loja):
+        return jsonify({"error": "Vínculo inválido."}), 400
+    if product_id and not seller.PRODUCT_ID_RE.match(product_id):
+        return jsonify({"error": "ID de produto inválido."}), 400
+    store.set_product_link(kind, ref_id, loja, product_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/shop/queue", methods=["GET"])
+def api_shop_queue():
+    itens = [_shop_item_view(p) for p in store.shop_history(limit=150)]
+    return jsonify({"items": itens, "status": seller.status()})
+
+
+@app.route("/api/shop/queue", methods=["POST"])
+def api_shop_enqueue():
+    data = request.get_json(silent=True) or {}
+    itens = data.get("items")
+    if not isinstance(itens, list) or not itens:
+        return jsonify({"error": "Selecione ao menos um vídeo."}), 400
+    try:
+        criadas = seller.enqueue(
+            itens[:200],
+            account=str(data.get("account") or ""),
+            interval_min=data.get("interval_min"),
+            shop=str(data.get("shop") or ""),
+        )
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"created": len(criadas), "status": seller.status()})
+
+
+@app.route("/api/shop/queue/pause", methods=["POST"])
+def api_shop_pause():
+    data = request.get_json(silent=True) or {}
+    return jsonify(seller.set_paused(bool(data.get("paused", True))))
+
+
+@app.route("/api/shop/queue/<pub_id>/cancel", methods=["POST"])
+def api_shop_cancel(pub_id):
+    try:
+        seller.cancel(pub_id)
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    return ("", 204)
+
+
+@app.route("/api/shop/queue/<pub_id>/retry", methods=["POST"])
+def api_shop_retry(pub_id):
+    try:
+        seller.retry(pub_id)
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    return ("", 204)
 
 
 # ---------------------------------------------------------------------------

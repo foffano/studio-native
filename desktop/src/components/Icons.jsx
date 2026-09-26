@@ -11,6 +11,14 @@ const base = {
   strokeLinejoin: "round",
 };
 
+export const IconCart = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="9" cy="20" r="1.4" />
+    <circle cx="18" cy="20" r="1.4" />
+    <path d="M2 3h3l2.6 12.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.1L21 8H6.2" />
+  </svg>
+);
+
 export const IconVideo = (p) => (
   <svg {...base} {...p}>
     <path d="m22 8-6 4 6 4V8Z" />

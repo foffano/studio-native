@@ -5,7 +5,15 @@ import FolderView from "./components/FolderView.jsx";
 import ProducedView from "./components/ProducedView.jsx";
 import LibraryView from "./components/LibraryView.jsx";
 import SettingsView from "./components/SettingsView.jsx";
-import { criarPasta, getConfig, getLibrary, importHistoryToBackend } from "./api.js";
+import ShopView from "./components/ShopView.jsx";
+import ShopBrowser from "./components/ShopBrowser.jsx";
+import {
+  criarPasta,
+  getConfig,
+  getLibrary,
+  getShopStatus,
+  importHistoryToBackend,
+} from "./api.js";
 import { getEntry, getEntryTitle, loadHistory } from "./lib/history.js";
 import {
   subscribeGeneration,
@@ -52,6 +60,10 @@ export default function App() {
   const [activeEntry, setActiveEntry] = useState(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [libraryPick, setLibraryPick] = useState(null);
+  // TikTok Shop: o resumo alimenta a barra lateral e o aviso de "precisa de
+  // voce"; o navegador remoto abre por cima de qualquer tela.
+  const [shop, setShop] = useState(null);
+  const [navegadorShop, setNavegadorShop] = useState(false);
 
   const recarregarNav = async () => {
     try {
@@ -83,6 +95,23 @@ export default function App() {
     migrateHistoryOnce();
     resumeRunningGenerations();
     return subscribeGeneration(() => setHistoryVersion((v) => v + 1));
+  }, []);
+
+  // A fila do TikTok Shop anda sozinha no servidor e as vezes para esperando
+  // alguem (login, verificacao anti-robo). Consultar de tempos em tempos e o
+  // que faz esse pedido aparecer em qualquer tela.
+  useEffect(() => {
+    let vivo = true;
+    const olhar = () =>
+      getShopStatus()
+        .then((s) => vivo && setShop(s))
+        .catch(() => {});
+    olhar();
+    const t = setInterval(olhar, 8000);
+    return () => {
+      vivo = false;
+      clearInterval(t);
+    };
   }, []);
 
   useEffect(() => {
@@ -170,6 +199,8 @@ export default function App() {
       ? "Ajustes"
       : destino.area === "gerar"
       ? "Produzir vídeo"
+      : destino.area === "shop"
+      ? "TikTok Shop"
       : (TITULOS[destino.area] || {})[destino.secao] || "Studio Native";
 
   return (
@@ -185,12 +216,27 @@ export default function App() {
         emProducao={emProducao}
         geracaoAberta={destino.area === "gerar" ? activeChatId : null}
         onAbrirGeracao={abrirGeracao}
+        shop={shop}
       />
 
       <main className="content">
         <div className="content__head">
           <h1 className="title">{titulo}</h1>
         </div>
+
+        {shop?.attention && destino.area !== "shop" && !navegadorShop && (
+          <div className="shop-atencao" role="alert">
+            <div>
+              <strong>A publicação no TikTok Shop precisa de você</strong>
+              <p>{shop.attention.message}</p>
+            </div>
+            <div className="shop-atencao__acoes">
+              <button className="btn btn--xs btn--primary" onClick={() => setNavegadorShop(true)}>
+                Ver navegador
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Só no celular, onde a barra lateral virou rodapé e coube apenas o
             essencial. Favoritos, Recentes e Lixeira ficavam **inalcançáveis**
@@ -258,7 +304,13 @@ export default function App() {
         )}
 
         {destino.area === "ajustes" && <SettingsView onSaved={refreshConfig} />}
+
+        {destino.area === "shop" && (
+          <ShopView onAbrirNavegador={() => setNavegadorShop(true)} />
+        )}
       </main>
+
+      {navegadorShop && <ShopBrowser onClose={() => setNavegadorShop(false)} />}
     </div>
   );
 }

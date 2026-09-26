@@ -498,3 +498,61 @@ export async function downloadOutputsZip(ids) {
 export async function marcarPublicado(id, publicado = true) {
   return updateOutput(id, { published_manually: publicado });
 }
+
+// --- TikTok Shop (Central do Vendedor, pelo navegador do servidor) ----------
+
+const postJson = (path, body) =>
+  req(apiUrl(path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  }).then(async (res) => (res.status === 204 ? null : jsonOrThrow(res)));
+
+export const shopFrameUrl = (nonce) => apiUrl(`/api/shop/browser/frame?t=${nonce}`);
+
+export async function getShopStatus() {
+  return jsonOrThrow(await req(apiUrl("/api/shop/status")));
+}
+
+export const openShopBrowser = (shop) => postJson("/api/shop/browser", { shop });
+export const addShop = () => postJson("/api/shop/shops");
+export async function removeShop(shop) {
+  return jsonOrThrow(await req(apiUrl(`/api/shop/shops/${shop}`), { method: "DELETE" }));
+}
+export const closeShopBrowser = () => postJson("/api/shop/browser/close");
+
+/** Um clique, tecla ou arrasto de quem está olhando o navegador. */
+export const sendShopInput = (comando) => postJson("/api/shop/browser/input", comando);
+
+/** Resposta a um pedido de ajuda da automação: continuar, pular ou publicado. */
+export const answerShop = (action) => postJson("/api/shop/attention", { action });
+
+export async function getShopQueue() {
+  return jsonOrThrow(await req(apiUrl("/api/shop/queue")));
+}
+
+export const enqueueShop = (payload) => postJson("/api/shop/queue", payload);
+export const pauseShop = (paused) => postJson("/api/shop/queue/pause", { paused });
+export const cancelShopItem = (id) => postJson(`/api/shop/queue/${id}/cancel`);
+export const retryShopItem = (id) => postJson(`/api/shop/queue/${id}/retry`);
+
+// Gravação de uma sessão real (para calibrar o roteiro da automação).
+export const setShopRecording = (on) => postJson("/api/shop/recording", { on });
+export const shopSnapshot = () => postJson("/api/shop/recording/snapshot");
+export const shopRecordingUrl = () => apiUrl("/api/shop/recording/download");
+
+// Catálogo do TikTok Shop e o vínculo produto ↔ vídeo.
+export const shopThumbUrl = (id) => apiUrl(`/api/shop/products/${id}/thumb`);
+export async function getShopProducts() {
+  return jsonOrThrow(await req(apiUrl("/api/shop/products")));
+}
+export const syncShopProducts = (shop) => postJson("/api/shop/products/sync", { shop });
+export async function linkShopProduct(kind, refId, shop, productId) {
+  const res = await req(apiUrl("/api/shop/links"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, ref_id: refId, shop, product_id: productId || "" }),
+  });
+  return jsonOrThrow(res);
+}
+export const shopAvatarUrl = (handle) => apiUrl(`/api/shop/accounts/${handle}/avatar`);

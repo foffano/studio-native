@@ -9,6 +9,7 @@ import {
   IconClock,
   IconTrash,
   IconVideo,
+  IconCart,
 } from "./Icons.jsx";
 
 /** Item de navegação com ícone, rótulo e contagem opcional. */
@@ -56,6 +57,7 @@ export default function Sidebar({
   emProducao,
   geracaoAberta,
   onAbrirGeracao,
+  shop,
 }) {
   const [pastasAbertas, setPastasAbertas] = useState(true);
 
@@ -166,6 +168,21 @@ export default function Sidebar({
             />
           </>
         )}
+
+        {/* A fila do TikTok Shop mora aqui, e nao dentro de Produzidos: ela
+            anda sozinha por horas, e quem volta precisa achar o lugar onde
+            ela pede ajuda (login, verificacao anti-robo) sem procurar. */}
+        <div className="nav__label">Publicação</div>
+        <Item
+          icone={<IconCart />}
+          rotulo="TikTok Shop"
+          rotuloCurto="Shop"
+          principal
+          contagem={shop?.queue?.pending}
+          selo={shop?.attention ? "!" : undefined}
+          ativo={em("shop")}
+          onClick={() => onNavegar({ area: "shop" })}
+        />
 
         <button
           className="nav__label nav__label--btn"

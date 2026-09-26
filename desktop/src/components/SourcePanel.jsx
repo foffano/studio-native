@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import LazyVideo from "./LazyVideo.jsx";
 import PublishToTikTok from "./PublishToTikTok.jsx";
+import ShopPublishDialog from "./ShopPublishDialog.jsx";
+import ShopStatusLine, { publicacaoDaApi } from "./ShopStatusLine.jsx";
+import { ProdutoDoVideo } from "./ProductPicker.jsx";
 import { IconStar, IconTrash, IconPlus, IconCheck, IconDownload } from "./Icons.jsx";
 import {
   deleteOutput,
@@ -51,6 +54,7 @@ export default function SourcePanel({
   const [saidas, setSaidas] = useState(null);
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState("");
+  const [shop, setShop] = useState(false);
   const caixa = useRef(null);
 
   // No celular este painel cobre a tela inteira, e o botao de fechar e a unica
@@ -216,6 +220,16 @@ export default function SourcePanel({
             </button>
           </div>
 
+          {/* O produto do vídeo-fonte vale para tudo que sair dele: é o que
+              vai no carrinho laranja quando os produzidos forem ao TikTok Shop. */}
+          <ProdutoDoVideo
+            kind="library"
+            refId={item.id}
+            vinculos={item.shop_products || {}}
+            rotulo="Produto no TikTok Shop (vale para todos os produzidos)"
+            onMudou={recarregarSaidas}
+          />
+
           <div className="painel__tags">
             <div className="chips">
               {(item.tags || []).map((t) => (
@@ -268,7 +282,30 @@ export default function SourcePanel({
             {ocupado === "zip" ? "Preparando..." : "Baixar todos"}
           </button>
         )}
+        {(saidas || []).some((o) => !o.published) && (
+          <button
+            className="btn btn--xs btn--ghost"
+            onClick={() => setShop(true)}
+            title="Publicar os que ainda não saíram, com o produto deste vídeo"
+          >
+            TikTok Shop
+          </button>
+        )}
       </h3>
+
+      {shop && (
+        <ShopPublishDialog
+          outputs={(saidas || []).filter(
+            (o) =>
+              !o.published &&
+              !(o.publications || []).some(
+                (p) => p.platform === "tiktok_shop" && ["fila", "enviando"].includes(p.state)
+              )
+          )}
+          onClose={() => setShop(false)}
+          onDone={recarregarSaidas}
+        />
+      )}
 
       <div className="painel__lista">
         {saidas === null && <p className="muted">Carregando...</p>}
@@ -333,9 +370,16 @@ export default function SourcePanel({
                   <IconTrash width={13} height={13} />
                 </button>
               </div>
+              <ProdutoDoVideo
+                kind="output"
+                refId={o.id}
+                vinculos={o.shop_products}
+                rotulo="Produto deste vídeo"
+              />
+              <ShopStatusLine publications={o.publications} />
               <PublishToTikTok
                 outputId={o.id}
-                publicacaoInicial={(o.publications || [])[0] || null}
+                publicacaoInicial={publicacaoDaApi(o.publications)}
               />
             </div>
           </article>

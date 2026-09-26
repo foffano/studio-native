@@ -10,6 +10,12 @@ Pillow>=11.2,<12
 numpy>=1.25
 imageio-ffmpeg>=0.4.9
 
+# Publicacao no TikTok Shop pela Central do Vendedor (seller.py). O Chromium
+# roda no servidor; o painel mostra a tela dele pelo protocolo do DevTools
+# (websockets). Depois do pip: python -m playwright install --with-deps chromium
+playwright>=1.47
+websockets>=12
+
 # Cifra dos tokens do TikTok fora do Windows (AES-GCM, ver secretbox.py). No
 # Windows quem cifra e o DPAPI, e este pacote nao e instalado.
 cryptography>=42; sys_platform != "win32"

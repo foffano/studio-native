@@ -74,6 +74,64 @@ CREATE TABLE IF NOT EXISTS folders (
     created_at TEXT NOT NULL
 );
 
+-- Catalogo do TikTok Shop, baixado da Central do Vendedor (seller.py). O ID e o
+-- do TikTok (unico entre lojas); `shop` e a chave da loja no seller.py.
+CREATE TABLE IF NOT EXISTS shop_products (
+    id         TEXT PRIMARY KEY,
+    shop       TEXT DEFAULT '',
+    name       TEXT DEFAULT '',
+    image_url  TEXT DEFAULT '',
+    price      TEXT DEFAULT '',
+    status     INTEGER DEFAULT 0,
+    active     INTEGER DEFAULT 1,
+    synced_at  TEXT DEFAULT ''
+);
+
+-- Qual produto vai no carrinho de cada video, em cada loja. kind='library'
+-- vale para tudo que sair daquele video-fonte; kind='output' e a excecao de um
+-- produzido. O mesmo video pode ter um produto em cada loja.
+CREATE TABLE IF NOT EXISTS product_links (
+    kind       TEXT NOT NULL,
+    ref_id     TEXT NOT NULL,
+    shop       TEXT NOT NULL DEFAULT '',
+    product_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (kind, ref_id, shop)
+);
+
+-- Lojas do TikTok Shop (seller.py): um login na Central do Vendedor cada, com
+-- perfil de navegador proprio em seller_browser/<key>.
+CREATE TABLE IF NOT EXISTS shops (
+    key                TEXT PRIMARY KEY,
+    name               TEXT DEFAULT '',
+    seller_id          TEXT DEFAULT '',
+    code               TEXT DEFAULT '',
+    video_url          TEXT DEFAULT '',
+    products_synced_at TEXT DEFAULT '',
+    last_login_ok      TEXT DEFAULT '',
+    created_at         TEXT NOT NULL
+);
+
+-- As contas do TikTok vinculadas a cada loja (oficial e de marketing), na
+-- ordem em que aparecem na Central.
+CREATE TABLE IF NOT EXISTS shop_accounts (
+    shop      TEXT NOT NULL,
+    handle    TEXT NOT NULL,
+    tt_id     TEXT DEFAULT '',
+    nickname  TEXT DEFAULT '',
+    role      INTEGER DEFAULT 0,
+    eligible  INTEGER DEFAULT 1,
+    position  INTEGER DEFAULT 0,
+    PRIMARY KEY (shop, handle)
+);
+
+-- Ajustes soltos do app (valor em JSON): intervalo da fila, pausa, ultima
+-- conta usada. Uma tabela, e nao mais um arquivo JSON por recurso.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     id                TEXT PRIMARY KEY,
     platform          TEXT DEFAULT 'tiktok',
@@ -138,6 +196,30 @@ def _migrar(con):
     # aplicativo do TikTok) precisa de um jeito de dizer que ja publicou.
     if "manual_published_at" not in colunas:
         con.execute("ALTER TABLE outputs ADD COLUMN manual_published_at TEXT DEFAULT ''")
+    # Publicacao pelo TikTok Shop (seller.py): a conta de destino e um @ da
+    # Central do Vendedor, nao uma linha de `accounts` -- nao ha token dela.
+    colunas_pub = {r["name"] for r in con.execute("PRAGMA table_info(publications)")}
+    if "target" not in colunas_pub:
+        con.execute("ALTER TABLE publications ADD COLUMN target TEXT DEFAULT ''")
+    # Varias lojas do TikTok Shop: a publicacao sabe de qual loja e.
+    if "shop" not in colunas_pub:
+        con.execute("ALTER TABLE publications ADD COLUMN shop TEXT DEFAULT ''")
+    colunas_prod = {r["name"] for r in con.execute("PRAGMA table_info(shop_products)")}
+    if "shop" not in colunas_prod:
+        con.execute("ALTER TABLE shop_products ADD COLUMN shop TEXT DEFAULT ''")
+    # A chave de product_links ganhou a loja; SQLite nao troca chave primaria
+    # no lugar, entao a tabela e refeita.
+    colunas_link = {r["name"] for r in con.execute("PRAGMA table_info(product_links)")}
+    if "shop" not in colunas_link:
+        con.execute("ALTER TABLE product_links RENAME TO product_links_v1")
+        con.execute("""CREATE TABLE product_links (
+            kind TEXT NOT NULL, ref_id TEXT NOT NULL, shop TEXT NOT NULL DEFAULT '',
+            product_id TEXT NOT NULL, updated_at TEXT NOT NULL,
+            PRIMARY KEY (kind, ref_id, shop))""")
+        con.execute("""INSERT INTO product_links (kind, ref_id, shop, product_id, updated_at)
+            SELECT l.kind, l.ref_id, COALESCE(p.shop, ''), l.product_id, l.updated_at
+            FROM product_links_v1 l LEFT JOIN shop_products p ON p.id = l.product_id""")
+        con.execute("DROP TABLE product_links_v1")
 
 
 def _rows(sql, params=()):
@@ -259,6 +341,7 @@ def _attach_publications(items):
     """Anexa as publicacoes de cada output em uma consulta so."""
     if not items:
         return items
+    _attach_product(items)
     ids = [i["id"] for i in items]
     marks = ",".join("?" * len(ids))
     pubs = _rows(
@@ -432,13 +515,15 @@ def add_publication(
     product_ids=None,
     state="fila",
     scheduled_for="",
+    target="",
+    shop="",
 ):
     pid = uuid.uuid4().hex
     _exec(
         """INSERT INTO publications
            (id, output_id, platform, account_id, mode, privacy, product_mode,
-            product_ids, state, scheduled_for, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            product_ids, state, scheduled_for, created_at, target, shop)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             pid,
             output_id,
@@ -451,6 +536,8 @@ def add_publication(
             state,
             scheduled_for,
             _now(),
+            target or "",
+            shop or "",
         ),
     )
     return get_publication(pid)
@@ -468,7 +555,8 @@ def get_publication(pub_id):
 
 UPDATABLE_PUB_FIELDS = {
     "publish_id", "state", "error", "published_at", "post_url",
-    "privacy", "mode", "product_mode", "scheduled_for",
+    "privacy", "mode", "product_mode", "scheduled_for", "target", "product_ids",
+    "shop",
 }
 
 
@@ -477,6 +565,8 @@ def update_publication(pub_id, **fields):
     for key, value in fields.items():
         if key not in UPDATABLE_PUB_FIELDS:
             continue
+        if key == "product_ids":
+            value = json.dumps(list(value or []), ensure_ascii=False)
         sets.append(f"{key} = ?")
         params.append(value)
     if not sets:
@@ -501,6 +591,251 @@ def list_publications(state=None, limit=200):
         except (ValueError, TypeError):
             r["product_ids"] = []
     return rows
+
+
+def shop_publications(states=None, limit=300):
+    """Publicacoes do TikTok Shop, da mais antiga para a mais nova."""
+    sql = "SELECT * FROM publications WHERE platform = 'tiktok_shop'"
+    params = []
+    if states:
+        sql += f" AND state IN ({','.join('?' * len(states))})"
+        params += list(states)
+    sql += " ORDER BY created_at ASC LIMIT ?"
+    params.append(int(limit))
+    rows = _rows(sql, tuple(params))
+    for r in rows:
+        try:
+            r["product_ids"] = json.loads(r.get("product_ids") or "[]")
+        except (ValueError, TypeError):
+            r["product_ids"] = []
+    return rows
+
+
+def shop_queue():
+    """O que ainda falta publicar pelo TikTok Shop, na ordem de chegada."""
+    return shop_publications(states=("fila",))
+
+
+def shop_history(limit=100):
+    """As mais recentes primeiro, para a tela da fila."""
+    rows = _rows(
+        "SELECT * FROM (SELECT * FROM publications WHERE platform = 'tiktok_shop' "
+        "ORDER BY created_at DESC LIMIT ?) ORDER BY created_at ASC",
+        (int(limit),),
+    )
+    for r in rows:
+        try:
+            r["product_ids"] = json.loads(r.get("product_ids") or "[]")
+        except (ValueError, TypeError):
+            r["product_ids"] = []
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# produtos do TikTok Shop e o vinculo com os videos
+# ---------------------------------------------------------------------------
+
+def save_shop_products(produtos, shop):
+    """Grava o catalogo baixado de uma loja. O que sumiu do TikTok fica, mas
+    inativo: um video ja vinculado a ele continua mostrando o nome."""
+    agora = _now()
+    with _LOCK:
+        _CONN.execute("UPDATE shop_products SET active = 0 WHERE shop = ?", (shop,))
+        for p in produtos:
+            _CONN.execute(
+                """INSERT INTO shop_products (id, shop, name, image_url, price, status, active, synced_at)
+                   VALUES (?,?,?,?,?,?,1,?)
+                   ON CONFLICT(id) DO UPDATE SET shop=excluded.shop, name=excluded.name,
+                     image_url=excluded.image_url, price=excluded.price,
+                     status=excluded.status, active=1, synced_at=excluded.synced_at""",
+                (str(p["id"]), shop, p.get("name", "")[:300], p.get("image_url", "")[:1000],
+                 p.get("price", "")[:60], int(p.get("status") or 0), agora),
+            )
+        _CONN.commit()
+
+
+def upsert_shop_product(product_id, name, shop):
+    """Produto visto na hora de publicar, antes de qualquer sincronizacao."""
+    _exec(
+        """INSERT INTO shop_products (id, shop, name, synced_at) VALUES (?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET name = CASE WHEN shop_products.name = ''
+             THEN excluded.name ELSE shop_products.name END""",
+        (str(product_id), shop, (name or "")[:300], _now()),
+    )
+
+
+def list_shop_products(shop=None, include_inactive=False):
+    sql, params = "SELECT * FROM shop_products WHERE 1=1", []
+    if shop:
+        sql += " AND shop = ?"
+        params.append(shop)
+    if not include_inactive:
+        sql += " AND active = 1"
+    rows = _rows(sql + " ORDER BY name COLLATE NOCASE", tuple(params))
+    contagem = {}
+    for r in _rows("SELECT product_id, COUNT(*) AS n FROM product_links GROUP BY product_id"):
+        contagem[r["product_id"]] = int(r["n"])
+    for r in rows:
+        r["links"] = contagem.get(r["id"], 0)
+        r["active"] = bool(r["active"])
+    return rows
+
+
+def count_shop_products():
+    return {r["shop"]: int(r["n"]) for r in _rows(
+        "SELECT shop, COUNT(*) AS n FROM shop_products WHERE active = 1 GROUP BY shop")}
+
+
+def get_shop_product(product_id):
+    return _one("SELECT * FROM shop_products WHERE id = ?", (str(product_id),))
+
+
+def set_product_link(kind, ref_id, shop, product_id):
+    if kind not in ("library", "output"):
+        raise ValueError("kind invalido")
+    if product_id:
+        _exec(
+            """INSERT INTO product_links (kind, ref_id, shop, product_id, updated_at) VALUES (?,?,?,?,?)
+               ON CONFLICT(kind, ref_id, shop) DO UPDATE SET product_id=excluded.product_id,
+                 updated_at=excluded.updated_at""",
+            (kind, ref_id, shop, str(product_id), _now()),
+        )
+    else:
+        _exec("DELETE FROM product_links WHERE kind = ? AND ref_id = ? AND shop = ?",
+              (kind, ref_id, shop))
+
+
+def product_links(kind):
+    """{ref_id: {loja: product_id}}"""
+    out = {}
+    for r in _rows("SELECT ref_id, shop, product_id FROM product_links WHERE kind = ?", (kind,)):
+        out.setdefault(r["ref_id"], {})[r["shop"]] = r["product_id"]
+    return out
+
+
+def product_for_output(output, shop):
+    """O produto do video nesta loja: o dele mesmo, senao o do video-fonte."""
+    if not output or not shop:
+        return ""
+    r = _one("SELECT product_id FROM product_links WHERE kind='output' AND ref_id=? AND shop=?",
+             (output["id"], shop))
+    if r:
+        return r["product_id"]
+    if output.get("library_id"):
+        r = _one("SELECT product_id FROM product_links WHERE kind='library' AND ref_id=? AND shop=?",
+                 (output["library_id"], shop))
+        if r:
+            return r["product_id"]
+    return ""
+
+
+def _attach_product(items):
+    """shop_products = {loja: {"own": vinculo do proprio video, "resolved": o que vale}}."""
+    por_output = product_links("output")
+    por_fonte = product_links("library")
+    for item in items:
+        proprios = por_output.get(item["id"], {})
+        da_fonte = por_fonte.get(item.get("library_id") or "", {})
+        item["shop_products"] = {
+            loja: {"own": proprios.get(loja, ""), "resolved": proprios.get(loja) or da_fonte.get(loja, "")}
+            for loja in set(proprios) | set(da_fonte)
+        }
+
+
+def assign_shop_to_orphans(shop):
+    """Da versao de uma loja so: o que nao tinha loja passa a ser desta."""
+    with _LOCK:
+        _CONN.execute("UPDATE shop_products SET shop = ? WHERE shop = ''", (shop,))
+        _CONN.execute("UPDATE product_links SET shop = ? WHERE shop = ''", (shop,))
+        _CONN.execute("UPDATE publications SET shop = ? WHERE platform = 'tiktok_shop' AND shop = ''",
+                      (shop,))
+        _CONN.commit()
+
+
+def forget_shop(shop):
+    """Loja removida: some o catalogo e os vinculos dela (o historico fica)."""
+    with _LOCK:
+        _CONN.execute("DELETE FROM shop_products WHERE shop = ?", (shop,))
+        _CONN.execute("DELETE FROM product_links WHERE shop = ?", (shop,))
+        _CONN.commit()
+
+
+# ---------------------------------------------------------------------------
+# ajustes, lojas e contas do TikTok Shop
+# ---------------------------------------------------------------------------
+
+def setting_get(key, default=None):
+    r = _one("SELECT value FROM app_settings WHERE key = ?", (key,))
+    if not r:
+        return default
+    try:
+        return json.loads(r["value"])
+    except (ValueError, TypeError):
+        return default
+
+
+def setting_set(**valores):
+    with _LOCK:
+        for k, v in valores.items():
+            _CONN.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (k, json.dumps(v, ensure_ascii=False)),
+            )
+        _CONN.commit()
+
+
+SHOP_FIELDS = ("name", "seller_id", "code", "video_url", "products_synced_at", "last_login_ok", "created_at")
+
+
+def list_shops():
+    return _rows("SELECT * FROM shops ORDER BY created_at, key")
+
+
+def get_shop(key):
+    return _one("SELECT * FROM shops WHERE key = ?", (key,))
+
+
+def upsert_shop(key, **fields):
+    desconhecidos = set(fields) - set(SHOP_FIELDS)
+    if desconhecidos:
+        raise ValueError(f"upsert_shop: campo(s) desconhecido(s): {', '.join(sorted(desconhecidos))}")
+    with _LOCK:
+        _CONN.execute("INSERT OR IGNORE INTO shops (key, created_at) VALUES (?, ?)",
+                      (key, fields.get("created_at") or _now()))
+        if fields:
+            sets = ", ".join(f"{k} = ?" for k in fields)
+            _CONN.execute(f"UPDATE shops SET {sets} WHERE key = ?", (*fields.values(), key))
+        _CONN.commit()
+    return get_shop(key)
+
+
+def delete_shop(key):
+    with _LOCK:
+        _CONN.execute("DELETE FROM shop_accounts WHERE shop = ?", (key,))
+        _CONN.execute("DELETE FROM shops WHERE key = ?", (key,))
+        _CONN.commit()
+
+
+def list_shop_accounts(shop):
+    rows = _rows("SELECT * FROM shop_accounts WHERE shop = ? ORDER BY position, handle", (shop,))
+    for r in rows:
+        r["eligible"] = bool(r["eligible"])
+    return rows
+
+
+def set_shop_accounts(shop, contas):
+    """Grava a lista inteira de contas da loja, na ordem dada."""
+    with _LOCK:
+        _CONN.execute("DELETE FROM shop_accounts WHERE shop = ?", (shop,))
+        for i, c in enumerate(contas):
+            _CONN.execute(
+                """INSERT INTO shop_accounts (shop, handle, tt_id, nickname, role, eligible, position)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (shop, c["handle"], c.get("id", "") or c.get("tt_id", ""), c.get("nickname", ""),
+                 int(c.get("role") or 0), 1 if c.get("eligible", True) else 0, i),
+            )
+        _CONN.commit()
 
 
 # ---------------------------------------------------------------------------
