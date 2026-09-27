@@ -654,6 +654,7 @@ class SellerBrowser:
                     self.endpoint = _devtools_endpoint(port_file)
                     context.expose_binding("__snRecord", self._on_record)
                     context.add_init_script(RECORDER_JS)
+                    self._aplicar_login_importado(context)
                     context.on("page", lambda p: p.on("filechooser", self._on_file_chooser))
                     for p in context.pages:
                         p.on("filechooser", self._on_file_chooser)
@@ -697,6 +698,14 @@ class SellerBrowser:
             page = self._work_page(context)
             self.page_url = page.url
             self._drenar_gravacao(context)
+            if self._aplicar_login_importado(context):
+                page = self._work_page(context)
+                try:
+                    page.goto(shop_get(self.shop, "video_url") or SELLER_VIDEOS,
+                              wait_until="domcontentloaded", timeout=60_000)
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
             if self.want_shop and self.want_shop != self.shop and not self.recording:
                 return "trocar"
             if self.sync_pedido and self.sync_pedido != self.shop:
@@ -725,6 +734,23 @@ class SellerBrowser:
             except Exception:  # noqa: BLE001 -- a aba fechou; a proxima volta abre outra
                 time.sleep(0.5)
         return "fechado"
+
+    def _aplicar_login_importado(self, context):
+        """Cookies colados na tela (seller.import_login) entram no perfil aberto."""
+        arquivo = _profile_dir(self.shop) / PENDING_COOKIES
+        if not self.shop or not arquivo.exists():
+            return False
+        try:
+            cookies = json.loads(arquivo.read_text(encoding="utf-8"))
+            context.add_cookies(cookies)
+            # Um login novo merece catalogo novo.
+            self.sync_pedido = self.shop
+            self.sync = {"running": False, "error": "", "count": 0, "shop": self.shop}
+        except Exception as e:  # noqa: BLE001
+            self.error = f"Não consegui aplicar o login importado: {e}"
+        finally:
+            arquivo.unlink(missing_ok=True)
+        return True
 
     def _precisa_sincronizar(self, page):
         if self.recording or self.current:
@@ -1967,6 +1993,99 @@ def open_browser(shop=None):
         raise LookupError("Loja não encontrada.")
     BROWSER.ensure_started(shop or None)
     return status()
+
+
+# ---------------------------------------------------------------------------
+# importar login (cookies de um navegador ja logado)
+# ---------------------------------------------------------------------------
+# O login pela Central a partir do servidor esbarra no limite do TikTok: o IP e
+# de datacenter na Europa, e a tela de login responde "acessando com muita
+# frequencia". Entrar no Chrome do computador (IP brasileiro, residencial) e
+# trazer os cookies evita a tela de login no servidor.
+
+PENDING_COOKIES = "login-importado.json"
+_SAMESITE = {"no_restriction": "None", "none": "None", "lax": "Lax", "strict": "Strict"}
+
+
+def _cookie_playwright(c):
+    """Um cookie do Cookie-Editor / EditThisCookie / Playwright, no formato do Playwright."""
+    nome, valor = c.get("name"), c.get("value")
+    dominio = (c.get("domain") or "").strip()
+    if not nome or valor is None or not dominio:
+        return None
+    if c.get("hostOnly") and dominio.startswith("."):
+        dominio = dominio[1:]
+    expira = c.get("expires", c.get("expirationDate"))
+    try:
+        expira = float(expira) if expira not in (None, "", -1) and not c.get("session") else -1
+    except (TypeError, ValueError):
+        expira = -1
+    same = _SAMESITE.get(str(c.get("sameSite") or "").lower(), "Lax")
+    seguro = bool(c.get("secure"))
+    if same == "None" and not seguro:
+        same = "Lax"  # o Chrome recusa SameSite=None sem Secure
+    return {
+        "name": str(nome), "value": str(valor), "domain": dominio,
+        "path": c.get("path") or "/", "expires": expira,
+        "httpOnly": bool(c.get("httpOnly")), "secure": seguro, "sameSite": same,
+    }
+
+
+def _cookies_netscape(texto):
+    """cookies.txt (formato Netscape, extensao "Get cookies.txt LOCALLY")."""
+    out = []
+    for linha in texto.splitlines():
+        http_only = linha.startswith("#HttpOnly_")
+        if http_only:
+            linha = linha[len("#HttpOnly_"):]
+        if not linha.strip() or linha.startswith("#"):
+            continue
+        partes = linha.split("\t")
+        if len(partes) < 7:
+            continue
+        dominio, _, caminho, seguro, expira, nome, valor = partes[:7]
+        out.append({"name": nome, "value": valor, "domain": dominio, "path": caminho,
+                    "expires": int(expira) if expira.isdigit() and int(expira) > 0 else -1,
+                    "httpOnly": http_only, "secure": seguro.upper() == "TRUE"})
+    return out
+
+
+def parse_cookies(texto):
+    texto = (texto or "").strip()
+    if not texto:
+        raise ValueError("Cole os cookies exportados.")
+    try:
+        dados = json.loads(texto)
+        if isinstance(dados, dict):
+            dados = dados.get("cookies") or []
+    except ValueError:
+        dados = _cookies_netscape(texto)
+    cookies = [c for c in (_cookie_playwright(x) for x in dados if isinstance(x, dict)) if c]
+    cookies = [c for c in cookies if c["domain"].lstrip(".").endswith(("tiktok.com", "tiktokshop.com"))]
+    if not cookies:
+        raise ValueError("Não achei cookies do TikTok no que foi colado.")
+    # A Central tem sessao propria (sessionid_tiktokseller, SELLER_TOKEN), nao a
+    # do TikTok comum; qualquer uma das duas serve de sinal de login.
+    sessao = ("sessionid", "sessionid_ss", "sid_tt", "sessionid_tiktokseller",
+              "sid_tt_tiktokseller", "SELLER_TOKEN", "UNIFIED_SELLER_TOKEN")
+    if not any(c["name"] in sessao for c in cookies):
+        raise ValueError(
+            "Os cookies não têm a sessão do TikTok (sessionid). Exporte com a Central do "
+            "Vendedor aberta e logada, em seller-br.tiktok.com."
+        )
+    return cookies
+
+
+def import_login(shop, texto):
+    """Guarda os cookies no perfil da loja; o navegador os aplica ao abrir (ou ja)."""
+    if not shop_exists(shop):
+        raise LookupError("Loja não encontrada.")
+    cookies = parse_cookies(texto)
+    perfil = _profile_dir(shop)
+    perfil.mkdir(parents=True, exist_ok=True)
+    (perfil / PENDING_COOKIES).write_text(json.dumps(cookies), encoding="utf-8")
+    BROWSER.ensure_started(shop)
+    return len(cookies)
 
 
 def add_shop():

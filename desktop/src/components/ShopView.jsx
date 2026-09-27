@@ -17,6 +17,7 @@ import LazyVideo from "./LazyVideo.jsx";
 import { carregarProdutos, Miniatura } from "./ProductPicker.jsx";
 import { AvatarConta } from "./AccountPicker.jsx";
 import ShopPublishDialog from "./ShopPublishDialog.jsx";
+import ImportLoginDialog from "./ImportLoginDialog.jsx";
 
 /**
  * TikTok Shop: publicar vídeos com o carrinho laranja pela Central do
@@ -45,6 +46,7 @@ export default function ShopView({ onAbrirNavegador }) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState("");
   const [escolhendo, setEscolhendo] = useState(false);
+  const [importando, setImportando] = useState(null);
   const [, setTique] = useState(0);
 
   const carregar = async () => {
@@ -162,6 +164,7 @@ export default function ShopView({ onAbrirNavegador }) {
               onFechar={() => acao(closeShopBrowser)}
               onSincronizar={() => acao(() => syncShopProducts(l.key))}
               onRemover={() => tirarLoja(l)}
+              onImportar={() => setImportando(l)}
             />
           ))}
         </div>
@@ -222,6 +225,10 @@ export default function ShopView({ onAbrirNavegador }) {
         </div>
       )}
 
+      {importando && (
+        <ImportLoginDialog loja={importando} onClose={() => setImportando(null)} onDone={carregar} />
+      )}
+
       {escolhendo && (
         <EscolherVideos
           ocupados={new Set(ativos.map((p) => p.output_id))}
@@ -234,7 +241,7 @@ export default function ShopView({ onAbrirNavegador }) {
 }
 
 /** Uma loja: login, contas, catálogo e o que dá para fazer com ela. */
-function CartaoLoja({ loja, navegador, publicando, onAbrir, onFechar, onSincronizar, onRemover }) {
+function CartaoLoja({ loja, navegador, publicando, onAbrir, onFechar, onSincronizar, onRemover, onImportar }) {
   const sync = loja.sync;
   const abrindo = navegador?.starting && navegador?.shop === loja.key;
   const pedeLogin = loja.open && navegador?.needs_login;
@@ -279,6 +286,9 @@ function CartaoLoja({ loja, navegador, publicando, onAbrir, onFechar, onSincroni
       <div className="shop-botoes" style={{ marginTop: 10 }}>
         <button className="btn btn--xs btn--primary" onClick={onAbrir} disabled={abrindo}>
           {abrindo ? "Abrindo..." : loja.open ? "Ver navegador" : loja.configured ? "Abrir navegador" : "Entrar na conta"}
+        </button>
+        <button className="btn btn--xs btn--ghost" onClick={onImportar} title="Trazer o login de um Chrome já logado no seu computador">
+          Importar login
         </button>
         {loja.configured && (
           <button className="btn btn--xs btn--ghost" onClick={onSincronizar} disabled={sync?.running}>

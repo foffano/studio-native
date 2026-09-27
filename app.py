@@ -3615,6 +3615,19 @@ def api_shop_add():
     return jsonify({"shop": chave, "status": seller.status()})
 
 
+@app.route("/api/shop/shops/<shop>/login", methods=["POST"])
+def api_shop_import_login(shop):
+    """Cookies de um navegador ja logado na Central (colados na tela)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        n = seller.import_login(shop, str(data.get("cookies") or ""))
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"imported": n, "status": seller.status()})
+
+
 @app.route("/api/shop/shops/<shop>", methods=["DELETE"])
 def api_shop_remove(shop):
     try:

@@ -556,3 +556,4 @@ export async function linkShopProduct(kind, refId, shop, productId) {
   return jsonOrThrow(res);
 }
 export const shopAvatarUrl = (handle) => apiUrl(`/api/shop/accounts/${handle}/avatar`);
+export const importShopLogin = (shop, cookies) => postJson(`/api/shop/shops/${shop}/login`, { cookies });
