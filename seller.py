@@ -70,7 +70,23 @@ DEFAULT_SETTINGS = {
     "last_account": "",
     "interval_min": 3,
     "paused": False,
+    # Quem publica: "servidor" (o navegador daqui) ou "mac" (o Publicador do
+    # Mac, que pega os videos pela API do worker -- ver worker.py).
+    "executor": "servidor",
 }
+
+# O coordenador do Publicador remoto (worker.py) se registra aqui. Com o modo
+# "mac", as acoes da tela (abrir navegador, sincronizar, responder a um pedido
+# de ajuda) viram comandos para ele em vez de mexer no navegador local.
+REMOTE = None
+
+
+def executor():
+    return state_get("executor") or "servidor"
+
+
+def _remoto():
+    return REMOTE if REMOTE is not None and executor() == "mac" else None
 
 # ---------------------------------------------------------------------------
 # configuracao e estado salvo
@@ -632,7 +648,13 @@ class SellerBrowser:
                     pass
 
             with sync_playwright() as pw:
+                extra = {}
+                # No Mac, o Chrome instalado (STUDIO_SELLER_CHANNEL=chrome)
+                # parece mais gente do que o Chromium do Playwright.
+                if os.getenv("STUDIO_SELLER_CHANNEL"):
+                    extra["channel"] = os.getenv("STUDIO_SELLER_CHANNEL")
                 context = pw.chromium.launch_persistent_context(
+                    **extra,
                     user_data_dir=str(perfil),
                     headless=_headless(),
                     viewport={"width": WIDTH, "height": HEIGHT},
@@ -862,8 +884,9 @@ class SellerBrowser:
         return _has_work() and time.time() < self.next_at
 
     def _next_job(self):
-        # Gravando, o navegador e da pessoa: a fila espera.
-        if self.recording or state_get("paused") or time.time() < self.next_at:
+        # Gravando, o navegador e da pessoa: a fila espera. No modo "mac" a
+        # fila e do Publicador remoto, nunca deste navegador.
+        if self.recording or executor() == "mac" or state_get("paused") or time.time() < self.next_at:
             return None
         fila = _store.shop_queue()
         return fila[0] if fila else None
@@ -1871,12 +1894,14 @@ def init(store_module, data_dir, output_dir):
     # Um video que estava no meio da publicacao quando o app caiu: nao da para
     # saber se saiu. Melhor dizer isso do que publicar duas vezes.
     for pub in _store.shop_publications(states=("enviando",)):
+        if pub.get("worker"):
+            continue  # esta com o Publicador do Mac, que segue sem o servidor
         _store.update_publication(
             pub["id"], state="erro",
             error="O app reiniciou no meio desta publicação. Confira no TikTok Seller "
                   "se o vídeo saiu antes de tentar de novo.",
         )
-    if _has_work() and not state_get("paused"):
+    if _has_work() and not state_get("paused") and executor() != "mac":
         BROWSER.ensure_started()
 
 
@@ -1901,22 +1926,32 @@ def _session_configured(shop):
 
 def shops_view():
     contagem = _store.count_shop_products() if _store else {}
+    remoto = _remoto()
+    info = remoto.status() if remoto else None
     lojas = []
     for k in shop_keys():
-        aberta = BROWSER.open and BROWSER.shop == k
+        if info is not None:
+            # Com o Mac publicando, o que vale e o navegador de la.
+            aberta = info.get("open_shop") == k
+            logada = k in (info.get("logged_shops") or [])
+            sync = info.get("sync") if (info.get("sync") or {}).get("shop") == k else None
+        else:
+            aberta = BROWSER.open and BROWSER.shop == k
+            logada = _session_configured(k)
+            sync = BROWSER.sync if BROWSER.sync.get("shop") == k else None
         lojas.append({
             "key": k,
             "name": shop_name(k),
             "named": bool(shop_get(k, "name")),
             "seller_id": shop_get(k, "seller_id"),
             "code": shop_get(k, "code"),
-            "configured": _session_configured(k),
+            "configured": logada,
             "open": aberta,
             "products": contagem.get(k, 0),
             "synced_at": shop_get(k, "products_synced_at") or "",
             "last_login_ok": shop_get(k, "last_login_ok") or "",
             "accounts": accounts_view(k),
-            "sync": BROWSER.sync if BROWSER.sync.get("shop") == k else None,
+            "sync": sync,
         })
     return lojas
 
@@ -1946,11 +1981,18 @@ def status():
         mensagem = "Logins salvos neste servidor."
     else:
         mensagem = "Nenhuma loja TikTok Seller conectada ainda."
+    remoto = _remoto()
+    info_remota = remoto.status() if remoto else None
+    if info_remota:
+        mensagem = info_remota["message"]
+        atual = info_remota.get("current") or atual
     return {
-        "available": ok,
+        "available": ok or bool(remoto),
+        "executor": executor(),
+        "worker": REMOTE.summary() if REMOTE is not None else None,
         "message": mensagem,
         "error": BROWSER.error,
-        "attention": BROWSER.attention,
+        "attention": (info_remota or {}).get("attention") if remoto else BROWSER.attention,
         "browser": {
             "open": BROWSER.open,
             "starting": BROWSER.starting,
@@ -1972,7 +2014,10 @@ def status():
             "paused": bool(state_get("paused")),
             "pending": len(fila),
             "current": atual,
-            "next_at": BROWSER.next_at if fila and BROWSER.next_at > time.time() else 0,
+            "next_at": (
+                (info_remota or {}).get("next_at", 0) if remoto
+                else BROWSER.next_at if fila and BROWSER.next_at > time.time() else 0
+            ),
             "interval_min": state_get("interval_min"),
         },
         "accounts": accounts_view(),
@@ -1991,6 +2036,10 @@ def status():
 def open_browser(shop=None):
     if shop and not shop_exists(shop):
         raise LookupError("Loja não encontrada.")
+    remoto = _remoto()
+    if remoto:
+        remoto.send({"type": "open_shop", "shop": shop or state_get("active_shop") or (shop_keys() or [""])[0]})
+        return status()
     BROWSER.ensure_started(shop or None)
     return status()
 
@@ -2092,7 +2141,11 @@ def add_shop():
     """Uma loja nova: perfil vazio, e o navegador abre nele para o login."""
     chave = new_shop_key()
     shop_update(chave, created_at=_now())
-    BROWSER.ensure_started(chave)
+    remoto = _remoto()
+    if remoto:
+        remoto.send({"type": "open_shop", "shop": chave})
+    else:
+        BROWSER.ensure_started(chave)
     return chave
 
 
@@ -2115,6 +2168,10 @@ def remove_shop(shop):
 
 
 def close_browser():
+    remoto = _remoto()
+    if remoto:
+        remoto.send({"type": "close"})
+        return status()
     BROWSER.request_close()
     if BROWSER._thread:
         BROWSER._thread.join(timeout=15)
@@ -2137,6 +2194,10 @@ def send_input(command):
 def reply(action):
     if action not in ("continuar", "pular", "publicado"):
         raise ValueError("Ação desconhecida.")
+    remoto = _remoto()
+    if remoto:
+        remoto.send({"type": "answer", "action": action})
+        return
     BROWSER.replies.put(action)
 
 
@@ -2186,7 +2247,8 @@ def enqueue(items, account="", interval_min=None, shop=""):
         ocupados.add(output_id)
     if criadas:
         state_update(paused=False)
-        BROWSER.ensure_started(None if BROWSER.alive() else loja)
+        if executor() != "mac":
+            BROWSER.ensure_started(None if BROWSER.alive() else loja)
     return criadas
 
 
@@ -2195,6 +2257,10 @@ def request_sync(shop=None):
     loja = shop or BROWSER.shop or state_get("active_shop") or (shop_keys() or [""])[0]
     if not loja or not shop_exists(loja):
         raise LookupError("Loja não encontrada.")
+    remoto = _remoto()
+    if remoto:
+        remoto.send({"type": "sync_shop", "shop": loja})
+        return status()
     BROWSER.sync_pedido = loja
     BROWSER.sync = {"running": False, "error": "", "count": 0, "shop": loja}
     BROWSER.ensure_started(None if BROWSER.alive() else loja)
@@ -2205,7 +2271,7 @@ def set_paused(paused):
     state_update(paused=bool(paused))
     if not paused:
         BROWSER.next_at = 0
-        if _has_work():
+        if _has_work() and executor() != "mac":
             BROWSER.ensure_started()
     return status()
 
@@ -2225,8 +2291,8 @@ def retry(pub_id):
         raise LookupError("Publicação não encontrada.")
     if pub["state"] not in ("erro", "cancelado"):
         raise ValueError("Esta publicação não está com erro.")
-    _store.update_publication(pub_id, state="fila", error="")
-    if not state_get("paused"):
+    _store.update_publication(pub_id, state="fila", error="", worker="", claimed_at="")
+    if not state_get("paused") and executor() != "mac":
         BROWSER.ensure_started()
 
 

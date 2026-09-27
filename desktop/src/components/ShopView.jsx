@@ -8,8 +8,11 @@ import {
   getShopQueue,
   openShopBrowser,
   outputUrl,
+  pairWorker,
   pauseShop,
   removeShop,
+  setExecutor,
+  unpairWorker,
   retryShopItem,
   syncShopProducts,
 } from "../api.js";
@@ -78,16 +81,20 @@ export default function ShopView({ onAbrirNavegador }) {
     }
   };
 
+  // Com o Mac publicando, o navegador abre la (na tela do Mac); o visor
+  // remoto so serve para o navegador do servidor.
+  const noMac = dados?.status?.executor === "mac";
+
   const abrirLoja = (loja) =>
     acao(async () => {
       await openShopBrowser(loja);
-      onAbrirNavegador();
+      if (!noMac) onAbrirNavegador();
     });
 
   const novaLoja = () =>
     acao(async () => {
       await addShop();
-      onAbrirNavegador();
+      if (!noMac) onAbrirNavegador();
     });
 
   const tirarLoja = (loja) => {
@@ -116,9 +123,13 @@ export default function ShopView({ onAbrirNavegador }) {
             <p>{s.attention.message}</p>
           </div>
           <div className="shop-atencao__acoes">
-            <button className="btn btn--xs btn--primary" onClick={onAbrirNavegador}>
-              Ver navegador
-            </button>
+            {noMac ? (
+              <span className="shop-atencao__onde">Resolva na janela do navegador no Mac.</span>
+            ) : (
+              <button className="btn btn--xs btn--primary" onClick={onAbrirNavegador}>
+                Ver navegador
+              </button>
+            )}
             <button className="btn btn--xs btn--ghost" onClick={() => acao(() => answerShop("continuar"))}>
               Continuar
             </button>
@@ -129,14 +140,16 @@ export default function ShopView({ onAbrirNavegador }) {
         </div>
       )}
 
+      <OndePublicar status={s} onAcao={acao} />
+
       <div className="card">
         <div className="shop-fila__topo">
           <div>
             <h3 className="card__title">Lojas TikTok Seller</h3>
             <p className="card__hint" style={{ margin: 0 }}>
-              Cada loja guarda o seu login no servidor, com as suas contas e o seu
-              catálogo. Você entra uma vez em cada; a publicação troca de loja sozinha.
-              Se o TikTok pedir uma verificação de robô, ela aparece no navegador.
+              {noMac
+                ? "Cada loja guarda o seu login no Mac, com as suas contas e o seu catálogo. “Abrir no Mac” abre a janela lá, para entrar na conta; depois os produtos e as contas sobem para cá sozinhos."
+                : "Cada loja guarda o seu login no servidor, com as suas contas e o seu catálogo. Você entra uma vez em cada; a publicação troca de loja sozinha. Se o TikTok pedir uma verificação de robô, ela aparece no navegador."}
             </p>
           </div>
           {s.available && (
@@ -159,8 +172,9 @@ export default function ShopView({ onAbrirNavegador }) {
               key={l.key}
               loja={l}
               navegador={s.browser}
+              noMac={noMac}
               publicando={!!q.current}
-              onAbrir={() => (l.open ? onAbrirNavegador() : abrirLoja(l.key))}
+              onAbrir={() => (l.open && !noMac ? onAbrirNavegador() : abrirLoja(l.key))}
               onFechar={() => acao(closeShopBrowser)}
               onSincronizar={() => acao(() => syncShopProducts(l.key))}
               onRemover={() => tirarLoja(l)}
@@ -240,8 +254,121 @@ export default function ShopView({ onAbrirNavegador }) {
   );
 }
 
+/**
+ * Quem publica: o navegador do servidor, ou o Publicador do Mac.
+ *
+ * O Mac existe porque o TikTok bloqueia o login a partir do servidor (IP de
+ * datacenter fora do Brasil). Com a internet de casa, o mesmo roteiro passa.
+ */
+function OndePublicar({ status, onAcao }) {
+  const [comando, setComando] = useState("");
+  const [copiado, setCopiado] = useState(false);
+  const w = status.worker || {};
+  const noMac = status.executor === "mac";
+
+  const conectar = () =>
+    onAcao(async () => {
+      if (w.paired && !window.confirm("Gerar um novo comando desconecta o Mac atual até você rodar o novo. Continuar?")) return;
+      const r = await pairWorker();
+      setComando(r.command);
+    });
+
+  const copiar = async () => {
+    try {
+      await navigator.clipboard.writeText(comando);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch (_) {
+      /* o texto continua selecionável */
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="shop-fila__topo">
+        <div>
+          <h3 className="card__title">Onde publicar</h3>
+          <p className="card__hint" style={{ margin: 0 }}>
+            {noMac
+              ? w.online
+                ? `Pelo Mac (${w.name || "conectado"}). Os vídeos saem por um navegador aberto nele — deixe o Publicador aberto.`
+                : "Pelo Mac, mas ele está desligado ou com o Publicador fechado. A fila espera por ele."
+              : "Pelo navegador do servidor. Se o TikTok bloquear o login daqui, publique pelo Mac."}
+          </p>
+          {w.outdated && w.online && (
+            <p className="card__hint" style={{ margin: "6px 0 0" }}>O Publicador do Mac está se atualizando.</p>
+          )}
+        </div>
+        <div className="shop-botoes">
+          <div className="segmentado" role="radiogroup" aria-label="Onde publicar">
+            <button
+              role="radio"
+              aria-checked={!noMac}
+              className={!noMac ? "is-on" : ""}
+              onClick={() => onAcao(() => setExecutor("servidor"))}
+            >
+              Servidor
+            </button>
+            <button
+              role="radio"
+              aria-checked={noMac}
+              className={noMac ? "is-on" : ""}
+              disabled={!w.paired}
+              title={w.paired ? "" : "Conecte o Mac antes"}
+              onClick={() => onAcao(() => setExecutor("mac"))}
+            >
+              Mac
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="shop-mac">
+        <span
+          className={"shop-sessao__ponto" + (w.online ? " shop-sessao__ponto--ok" : w.paired ? " shop-sessao__ponto--salva" : "")}
+          aria-hidden="true"
+        />
+        <span className="shop-mac__texto">
+          {!w.paired
+            ? "Nenhum Mac conectado."
+            : w.online
+            ? `Mac conectado: ${w.name || "sem nome"}`
+            : `Mac pareado, fora do ar${w.seen_seconds_ago != null ? ` (visto há ${Math.round(w.seen_seconds_ago / 60)} min)` : ""}.`}
+        </span>
+        <button className="btn btn--xs btn--ghost" onClick={conectar}>
+          {w.paired ? "Reinstalar no Mac" : "Conectar Mac"}
+        </button>
+        {w.paired && (
+          <button
+            className="btn btn--xs btn--ghost"
+            onClick={() =>
+              window.confirm("Desconectar o Mac? A publicação volta para o servidor.") && onAcao(unpairWorker)
+            }
+          >
+            Desconectar
+          </button>
+        )}
+      </div>
+
+      {comando && (
+        <div className="shop-comando">
+          <p className="card__hint" style={{ margin: "0 0 8px" }}>
+            No Mac, abra o <strong>Terminal</strong> (Spotlight › “Terminal”), cole o comando
+            abaixo e aperte Enter. Ele instala o Publicador e abre a janela dele. Depois,
+            escolha <strong>Mac</strong> acima. O comando vale como senha: não compartilhe.
+          </p>
+          <pre className="shop-comando__texto">{comando}</pre>
+          <button className="btn btn--xs btn--primary" onClick={copiar}>
+            {copiado ? "Copiado" : "Copiar comando"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Uma loja: login, contas, catálogo e o que dá para fazer com ela. */
-function CartaoLoja({ loja, navegador, publicando, onAbrir, onFechar, onSincronizar, onRemover, onImportar }) {
+function CartaoLoja({ loja, navegador, noMac, publicando, onAbrir, onFechar, onSincronizar, onRemover, onImportar }) {
   const sync = loja.sync;
   const abrindo = navegador?.starting && navegador?.shop === loja.key;
   const pedeLogin = loja.open && navegador?.needs_login;
@@ -285,11 +412,15 @@ function CartaoLoja({ loja, navegador, publicando, onAbrir, onFechar, onSincroni
       )}
       <div className="shop-botoes" style={{ marginTop: 10 }}>
         <button className="btn btn--xs btn--primary" onClick={onAbrir} disabled={abrindo}>
-          {abrindo ? "Abrindo..." : loja.open ? "Ver navegador" : loja.configured ? "Abrir navegador" : "Entrar na conta"}
+          {noMac
+            ? loja.open ? "Aberta no Mac" : loja.configured ? "Abrir no Mac" : "Entrar na conta (no Mac)"
+            : abrindo ? "Abrindo..." : loja.open ? "Ver navegador" : loja.configured ? "Abrir navegador" : "Entrar na conta"}
         </button>
-        <button className="btn btn--xs btn--ghost" onClick={onImportar} title="Trazer o login de um Chrome já logado no seu computador">
-          Importar login
-        </button>
+        {!noMac && (
+          <button className="btn btn--xs btn--ghost" onClick={onImportar} title="Trazer o login de um Chrome já logado no seu computador">
+            Importar login
+          </button>
+        )}
         {loja.configured && (
           <button className="btn btn--xs btn--ghost" onClick={onSincronizar} disabled={sync?.running}>
             Atualizar produtos

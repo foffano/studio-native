@@ -1,0 +1,4 @@
+# Publicador do Mac: o mesmo roteiro do servidor (seller.py), sem o resto do app.
+playwright>=1.47
+websockets>=12
+requests>=2.32

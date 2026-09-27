@@ -231,9 +231,13 @@ export default function App() {
               <p>{shop.attention.message}</p>
             </div>
             <div className="shop-atencao__acoes">
-              <button className="btn btn--xs btn--primary" onClick={() => setNavegadorShop(true)}>
-                Ver navegador
-              </button>
+              {shop.executor === "mac" ? (
+                <span className="shop-atencao__onde">Resolva na janela do navegador no Mac.</span>
+              ) : (
+                <button className="btn btn--xs btn--primary" onClick={() => setNavegadorShop(true)}>
+                  Ver navegador
+                </button>
+              )}
             </div>
           </div>
         )}

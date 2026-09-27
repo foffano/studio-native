@@ -37,7 +37,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
   && rm -rf /var/lib/apt/lists/* \
   && chmod -R a+rX /ms-playwright
 
-COPY app.py auth.py captions.py cdp_viewer.py secretbox.py seller.py store.py tiktok.py ./
+COPY app.py auth.py captions.py cdp_viewer.py secretbox.py seller.py store.py tiktok.py worker.py ./
+# O servidor entrega o Publicador do Mac (worker.py monta o client.zip daqui).
+COPY publicador/ ./publicador/
 COPY fonts/ ./fonts/
 COPY --from=front /front/dist ./desktop/dist
 

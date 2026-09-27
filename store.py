@@ -204,6 +204,11 @@ def _migrar(con):
     # Varias lojas do TikTok Shop: a publicacao sabe de qual loja e.
     if "shop" not in colunas_pub:
         con.execute("ALTER TABLE publications ADD COLUMN shop TEXT DEFAULT ''")
+    # Quem esta publicando: vazio e o navegador do servidor; "mac" e o
+    # Publicador do Mac, que pegou o video pela API do worker.
+    if "worker" not in colunas_pub:
+        con.execute("ALTER TABLE publications ADD COLUMN worker TEXT DEFAULT ''")
+        con.execute("ALTER TABLE publications ADD COLUMN claimed_at TEXT DEFAULT ''")
     colunas_prod = {r["name"] for r in con.execute("PRAGMA table_info(shop_products)")}
     if "shop" not in colunas_prod:
         con.execute("ALTER TABLE shop_products ADD COLUMN shop TEXT DEFAULT ''")
@@ -408,6 +413,10 @@ def update_output(output_id, **fields):
     return get_output(output_id)
 
 
+def delete_publication(pub_id):
+    _exec("DELETE FROM publications WHERE id = ?", (pub_id,))
+
+
 def delete_output(output_id):
     item = get_output(output_id)
     _exec("DELETE FROM publications WHERE output_id = ?", (output_id,))
@@ -517,8 +526,10 @@ def add_publication(
     scheduled_for="",
     target="",
     shop="",
+    pub_id=None,
 ):
-    pid = uuid.uuid4().hex
+    # pub_id: o Publicador do Mac espelha a publicacao do servidor com o mesmo ID.
+    pid = pub_id or uuid.uuid4().hex
     _exec(
         """INSERT INTO publications
            (id, output_id, platform, account_id, mode, privacy, product_mode,
@@ -556,7 +567,7 @@ def get_publication(pub_id):
 UPDATABLE_PUB_FIELDS = {
     "publish_id", "state", "error", "published_at", "post_url",
     "privacy", "mode", "product_mode", "scheduled_for", "target", "product_ids",
-    "shop",
+    "shop", "worker", "claimed_at",
 }
 
 

@@ -45,6 +45,7 @@ import secretbox
 import seller
 import store
 import tiktok
+import worker
 
 # ---------------------------------------------------------------------------
 # Resolucao de caminhos (suporta execucao normal e empacotada com PyInstaller).
@@ -436,6 +437,12 @@ def _logado():
 
 @app.before_request
 def _exigir_login():
+    # O Publicador do Mac nao tem sessao: entra com o token do pareamento, e so
+    # nas rotas dele.
+    if request.path.startswith("/api/worker/"):
+        if worker.REMOTE.check(request.headers.get("Authorization", "")):
+            return None
+        return jsonify({"error": "token_invalido"}), 401
     if request.method == "OPTIONS" or _rota_publica(request.path):
         return None
     if not senha_configurada():
@@ -885,6 +892,7 @@ purgar_lixeira()
 discard_orphan_uploads()
 recover_library_on_startup()
 seller.init(store, USER_DATA_DIR, OUTPUT_DIR)
+worker.REMOTE.init(store, BASE_DIR)
 
 
 def find_system_font():
@@ -3841,6 +3849,146 @@ def api_shop_link():
         return jsonify({"error": "ID de produto inválido."}), 400
     store.set_product_link(kind, ref_id, loja, product_id)
     return jsonify({"ok": True})
+
+
+# -- Publicador do Mac (worker.py) --------------------------------------------
+
+def _endereco_publico():
+    return PUBLIC_URL or request.host_url.rstrip("/")
+
+
+@app.route("/api/shop/worker/pair", methods=["POST"])
+def api_shop_worker_pair():
+    """Gera o token do Mac e o comando de instalacao (mostrado uma vez so)."""
+    token = worker.REMOTE.pair()
+    base = _endereco_publico()
+    comando = (
+        f'curl -fsSL -H "Authorization: Bearer {token}" '
+        f'"{base}/api/worker/instalar" | bash'
+    )
+    return jsonify({"command": comando, "status": seller.status()})
+
+
+@app.route("/api/shop/worker", methods=["DELETE"])
+def api_shop_worker_unpair():
+    worker.REMOTE.unpair()
+    return jsonify(seller.status())
+
+
+@app.route("/api/shop/executor", methods=["PUT"])
+def api_shop_executor():
+    data = request.get_json(silent=True) or {}
+    modo = data.get("executor")
+    if modo not in ("servidor", "mac"):
+        return jsonify({"error": "Modo inválido."}), 400
+    if modo == "mac" and not worker.REMOTE.paired():
+        return jsonify({"error": "Conecte o Mac antes."}), 409
+    if modo == "mac" and seller.BROWSER.current:
+        return jsonify({"error": "Espere o vídeo que está saindo pelo servidor terminar."}), 409
+    seller.state_update(executor=modo)
+    if modo == "mac" and seller.BROWSER.alive():
+        seller.close_browser()
+    return jsonify(seller.status())
+
+
+@app.route("/api/worker/heartbeat", methods=["POST"])
+def api_worker_heartbeat():
+    return jsonify(worker.REMOTE.heartbeat(request.get_json(silent=True) or {}))
+
+
+@app.route("/api/worker/claim", methods=["POST"])
+def api_worker_claim():
+    return jsonify({"job": worker.REMOTE.claim()})
+
+
+@app.route("/api/worker/files/<output_id>", methods=["GET"])
+def api_worker_file(output_id):
+    caminho = worker.REMOTE.file_for(output_id)
+    if not caminho:
+        return jsonify({"error": "Arquivo não liberado para o Mac."}), 404
+    return send_file(caminho, mimetype="video/mp4", as_attachment=False)
+
+
+@app.route("/api/worker/jobs/<pub_id>/result", methods=["POST"])
+def api_worker_result(pub_id):
+    try:
+        pub = worker.REMOTE.result(pub_id, request.get_json(silent=True) or {})
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"state": pub["state"]})
+
+
+@app.route("/api/worker/shops/<shop>/catalog", methods=["POST"])
+def api_worker_catalog(shop):
+    try:
+        n = worker.REMOTE.catalog(shop, request.get_json(silent=True) or {})
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify({"products": n})
+
+
+@app.route("/api/worker/client.zip", methods=["GET"])
+def api_worker_client():
+    resp = app.response_class(worker.REMOTE.client_zip(), mimetype="application/zip")
+    resp.headers["X-Client-Hash"] = worker.REMOTE.client_hash()
+    return resp
+
+
+@app.route("/api/worker/instalar", methods=["GET"])
+def api_worker_install():
+    """Script que o comando do pareamento roda no Terminal do Mac."""
+    token = request.headers.get("Authorization", "")[7:].strip()
+    script = _SCRIPT_INSTALACAO.replace("__SERVIDOR__", _endereco_publico()).replace("__TOKEN__", token)
+    return app.response_class(script, mimetype="text/x-shellscript")
+
+
+_SCRIPT_INSTALACAO = r"""#!/bin/bash
+# Instalador do Publicador do Studio Native (gerado pelo servidor).
+set -euo pipefail
+SERVIDOR="__SERVIDOR__"
+TOKEN="__TOKEN__"
+BASE="$HOME/Library/Application Support/StudioNativePublicador"
+APP="$BASE/app"
+echo "== Publicador do Studio Native =="
+if [ "$(uname)" != "Darwin" ]; then echo "Este instalador é para macOS."; exit 1; fi
+if ! command -v python3 >/dev/null || ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))'; then
+  echo "Precisa do Python 3.9 ou mais novo. Rode: xcode-select --install  e depois este comando de novo."
+  exit 1
+fi
+mkdir -p "$APP"
+echo "Baixando o Publicador..."
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$SERVIDOR/api/worker/client.zip" -o "$BASE/client.zip"
+( cd "$APP" && unzip -oq "$BASE/client.zip" )
+shasum -a 256 "$BASE/client.zip" | cut -c1-16 > "$BASE/client.hash"
+rm -f "$BASE/client.zip"
+if [ ! -x "$BASE/venv/bin/python" ]; then
+  echo "Preparando o Python (só na primeira vez)..."
+  python3 -m venv "$BASE/venv"
+fi
+"$BASE/venv/bin/python" -m pip install -q --upgrade pip
+"$BASE/venv/bin/python" -m pip install -q -r "$APP/requirements.txt"
+if [ ! -d "/Applications/Google Chrome.app" ]; then
+  echo "Baixando o navegador (só na primeira vez, ~150 MB)..."
+  PLAYWRIGHT_BROWSERS_PATH="$BASE/browsers" "$BASE/venv/bin/python" -m playwright install chromium
+fi
+"$BASE/venv/bin/python" "$APP/publicador.py" --configurar "$SERVIDOR" "$TOKEN"
+cat > "$BASE/abrir.sh" <<'ABRIR'
+#!/bin/bash
+BASE="$HOME/Library/Application Support/StudioNativePublicador"
+printf ']0;Studio Native Publicador'
+exec "$BASE/venv/bin/python" "$BASE/app/publicador.py"
+ABRIR
+chmod +x "$BASE/abrir.sh"
+mkdir -p "$HOME/Applications"
+rm -rf "$HOME/Applications/Studio Native Publicador.app"
+osacompile -o "$HOME/Applications/Studio Native Publicador.app"   -e 'tell application "Terminal"'   -e 'activate'   -e 'do script quoted form of (POSIX path of (path to home folder) & "Library/Application Support/StudioNativePublicador/abrir.sh")'   -e 'end tell'
+echo
+echo "Pronto. O Publicador está em Aplicativos do usuário: "Studio Native Publicador"."
+echo "Abrindo agora -- deixe a janela aberta enquanto houver vídeos na fila."
+open "$HOME/Applications/Studio Native Publicador.app"
+"""
 
 
 @app.route("/api/shop/queue", methods=["GET"])

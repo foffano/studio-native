@@ -557,3 +557,16 @@ export async function linkShopProduct(kind, refId, shop, productId) {
 }
 export const shopAvatarUrl = (handle) => apiUrl(`/api/shop/accounts/${handle}/avatar`);
 export const importShopLogin = (shop, cookies) => postJson(`/api/shop/shops/${shop}/login`, { cookies });
+// Publicador do Mac: pareamento e quem publica (servidor ou Mac).
+export const pairWorker = () => postJson("/api/shop/worker/pair");
+export async function unpairWorker() {
+  return jsonOrThrow(await req(apiUrl("/api/shop/worker"), { method: "DELETE" }));
+}
+export async function setExecutor(executor) {
+  const res = await req(apiUrl("/api/shop/executor"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ executor }),
+  });
+  return jsonOrThrow(res);
+}

@@ -3633,3 +3633,14 @@ body::before {
 .importar-passos { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; font-size: var(--text-sm); }
 .importar-passos a { color: var(--accent-text); }
 .importar-campo { min-height: 140px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+/* ---------- Publicador do Mac ---------- */
+.segmentado { display: inline-flex; border: 1.5px solid var(--border); border-radius: 10px; overflow: hidden; }
+.segmentado button { padding: 6px 14px; border: 0; background: transparent; color: var(--text-soft); font-weight: 600; cursor: pointer; }
+.segmentado button.is-on { background: var(--accent); color: #fff; }
+.segmentado button:disabled { opacity: 0.45; cursor: not-allowed; }
+.shop-mac { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: var(--text-sm); }
+.shop-mac__texto { margin-right: auto; }
+.shop-comando { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.shop-comando__texto { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #050814; font-size: 12px; white-space: pre-wrap; word-break: break-all; user-select: all; }
+.shop-atencao__onde { font-size: var(--text-sm); }
