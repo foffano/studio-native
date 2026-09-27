@@ -492,6 +492,19 @@ const CAPTCHA = [
   '.captcha-verify-container', '[class*="captcha_verify"]', '[class*="secsdk-captcha"]',
   '[id*="secsdk-captcha"]', 'iframe[src*="captcha"]', 'iframe[src*="verifycenter"]',
 ];
+// As hashtags ja viraram fichas no campo? O componente mudou de nome ao menos
+// uma vez (em 2026-09-27 era pulse-tag/core-tag dentro de m4b_input_tag, com o
+// "#" posto pelo proprio campo), entao vale qualquer um dos dois.
+const fichasDeHashtag = () => {
+  const caixas = document.querySelectorAll('[data-tid="m4b_input_tag"], [class*="input-tag"]');
+  const vistas = new Set();
+  for (const caixa of caixas) {
+    for (const el of caixa.querySelectorAll('[data-tid="m4b_tag"], [class*="input-tag-tag"], .core-tag')) {
+      if (shown(el)) vistas.add(norm(el.innerText).replace(/^#/, ''));
+    }
+  }
+  return Array.from(vistas).filter(Boolean);
+};
 const hasCaptcha = () => CAPTCHA.some((s) => Array.from(document.querySelectorAll(s)).some(shown));
 """
 
@@ -1303,11 +1316,22 @@ class _Publicacao:
 
     def abrir_envio(self):
         def fazer():
-            self.fechar_avisos()
-            self.clicar_texto("Publicar no TikTok", preferir="button")
-            self.pausa(0.6, 1.1)
-            self.esperar(lambda: self.visivel("Publicação de vídeo"), 8, "o menu Publicação de vídeo")
-            self.clicar_texto("Publicação de vídeo")
+            # Clicado cedo demais (a pagina ainda montando), o botao nao abre o
+            # menu -- aconteceu na primeira execucao real. Tenta ate tres vezes.
+            for tentativa in range(3):
+                self.fechar_avisos()
+                if not self.visivel("Publicação de vídeo"):
+                    self.clicar_texto("Publicar no TikTok", preferir="button")
+                try:
+                    self.esperar(lambda: self.visivel("Publicação de vídeo"), 4, "o menu Publicação de vídeo")
+                except StepError:
+                    if tentativa == 2:
+                        raise
+                    self.pausa(1.5, 2.5)
+                    continue
+                self.pausa(0.3, 0.6)
+                if self.clicar_texto("Publicação de vídeo"):
+                    return
 
         self.passo(
             "Abrindo o envio de vídeo",
@@ -1617,8 +1641,7 @@ class _Publicacao:
         # Campo de fichas (arco input-tag): cada Enter vira uma ficha.
         fichas = self.js(
             """
-            return Array.from(document.querySelectorAll('[class*="input-tag-tag"]'))
-              .filter(shown).map((el) => norm(el.innerText).replace(/^#/, ''));
+            return fichasDeHashtag();
             """
         ) or []
         if fichas:
@@ -1634,8 +1657,7 @@ class _Publicacao:
         self.pausa(0.2, 0.4)
         ja = self.js(
             """
-            return Array.from(document.querySelectorAll('[class*="input-tag-tag"]'))
-              .filter(shown).map((el) => norm(el.innerText).replace(/^#/, ''));
+            return fichasDeHashtag();
             """
         ) or []
         for tag in tags:

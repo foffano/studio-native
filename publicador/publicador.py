@@ -316,6 +316,8 @@ class Publicador:
         atencao = b.attention
         if atencao and atencao != self.ultima_atencao:
             log(f"PRECISA DE VOCÊ: {atencao['message']}")
+            log("  Responda aqui: c + Enter para continuar, p para pular o vídeo, "
+                "j se ele já foi publicado.")
             avisar("Studio Native precisa de você", atencao["message"])
         self.ultima_atencao = atencao
         estado = (b.current or {}).get("step", "") if b.current else ""
@@ -342,7 +344,25 @@ class Publicador:
         time.sleep(2)
         os.execv(sys.executable, [sys.executable, str(APP_DIR / "publicador.py")])
 
+    def ler_teclado(self):
+        """Respostas digitadas nesta janela, como os botoes da tela do app."""
+        acoes = {"c": "continuar", "continuar": "continuar", "p": "pular", "pular": "pular",
+                 "j": "publicado", "publicado": "publicado", "ja publicou": "publicado"}
+        for linha in sys.stdin:
+            acao = acoes.get(linha.strip().lower())
+            if not acao:
+                if linha.strip():
+                    log("Não entendi. Use c (continuar), p (pular) ou j (já publicou).")
+                continue
+            if not seller.BROWSER.attention:
+                log("Nada esperando resposta agora.")
+                continue
+            seller.reply(acao)
+            log(f"Ok: {acao}.")
+
     def rodar(self):
+        if sys.stdin and sys.stdin.isatty():
+            threading.Thread(target=self.ler_teclado, daemon=True).start()
         log(f"Publicador do Studio Native conectado a {self.url}")
         log("Deixe esta janela aberta. Os vídeos da fila saem por um navegador neste Mac.")
         while True:
