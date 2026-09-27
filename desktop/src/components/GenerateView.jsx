@@ -34,7 +34,7 @@ const SCRIPT_DIRECTIONS = [
   {
     key: "ugc_testimonial",
     title: "UGC / depoimento",
-    description: "Relato espontâneo, pessoal e crível, sem inventar resultados.",
+    description: "Um cliente que comprou conta a experiência e por que gostou, sem cara de anúncio.",
   },
   {
     key: "curiosity_hook",

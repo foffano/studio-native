@@ -1399,24 +1399,68 @@ SCRIPT_DIRECTIONS = {
     },
     "ugc_testimonial": {
         "idea": (
-            "UGC / DEPOIMENTO. Parece uma pessoa comum gravando no celular e "
-            "contando para os seguidores o que achou, nao um anuncio."
+            "DEPOIMENTO DE QUEM COMPROU. Quem fala e um cliente real que ja comprou "
+            "e usa o produto, gravando no celular para contar a propria experiencia "
+            "aos seguidores. Nao e anuncio: e um relato de compra, com a historia "
+            "de uma pessoa especifica."
         ),
         "tone": (
             "primeira pessoa (eu), coloquial, com expressoes faladas do dia a dia "
-            "(tipo 'gente', 'olha', 'serio'), frases curtas e ritmo de conversa."
+            "(tipo 'gente', 'olha', 'serio', 'confesso'), frases curtas, ritmo de "
+            "conversa e ate pequenas hesitacoes naturais."
         ),
-        "overlay": "soa como fala pessoal ou reacao espontanea, em primeira pessoa.",
+        "overlay": (
+            "soa como comentario pessoal de quem comprou (ex.: impressao sincera, "
+            "algo que surpreendeu), em primeira pessoa; nunca como slogan."
+        ),
         "structure": (
-            "(1) abra com uma confissao ou reacao pessoal; (2) conte como era antes "
-            "ou por que desconfiava; (3) descreva a impressao ao usar, com detalhes "
-            "sensoriais do que se ve no video; (4) feche recomendando como amiga(o), "
-            "com a CTA."
+            "(1) abra no meio da historia, com um momento concreto da compra ou do "
+            "uso (ex.: quando chegou, a primeira vez que usou, alguem que perguntou "
+            "sobre ele); (2) conte o MOTIVO pessoal e especifico de ter comprado e "
+            "o que esperava, inclusive se desconfiava; (3) conte o que achou usando "
+            "de verdade: 1 ou 2 detalhes concretos e sensoriais ligados ao que "
+            "aparece no video, e em que situacao da rotina usa; (4) diga com "
+            "sinceridade o que fez gostar, podendo admitir um porem pequeno e "
+            "honesto; (5) feche recomendando como se fosse para uma amiga(o). Em "
+            "video curto, fique com (1), (3) e (5): um detalhe real vale mais que "
+            "passar por todas as etapas."
         ),
         "avoid": (
-            "tom de locutor ou vendedor, segunda pessoa dominante, numeros e "
-            "resultados inventados (fale de impressao, nao de dados)."
+            "tom de locutor ou vendedor, falar com o espectador como cliente, "
+            "listar caracteristicas, adjetivos de propaganda ('incrivel', "
+            "'revolucionario', 'imperdivel', 'qualidade premium'), urgencia de "
+            "venda ('corre', 'ultimas unidades', 'aproveita'), frases genericas que "
+            "serviriam para qualquer produto ('amei', 'super recomendo' sem dizer "
+            "por que) e numeros ou resultados inventados."
         ),
+        # Sem esta persona, o system prompt de roteirista de vendas vence o
+        # formato e o "depoimento" sai com cara de anuncio.
+        "persona": (
+            "Voce escreve como um cliente brasileiro comum que comprou o produto no "
+            "TikTok Shop, usou e esta contando a experiencia no proprio perfil. Nao "
+            "e vendedor nem criador contratado: fala do que viveu, com detalhes "
+            "especificos e opiniao sincera. Nunca invente preco, desconto, "
+            "certificacao, resultado garantido ou atributo do produto que nao "
+            "esteja no contexto; historia pessoal e impressao podem ser criadas, "
+            "fatos do produto nao."
+        ),
+        "cta": (
+            "termine com uma indicacao pessoal e leve de onde comprou, mencionando "
+            "o carrinho laranja (ex.: 'o meu eu comprei nesse carrinho laranja "
+            "aqui'), sem tom de ordem nem urgencia."
+        ),
+        "angles": [
+            "o dia em que chegou e a primeira impressao ao abrir",
+            "o motivo bem especifico que fez comprar",
+            "comprou desconfiado(a) e mudou de ideia",
+            "alguem perguntou sobre ele e resolveu contar",
+            "o que usava antes e por que trocou",
+            "um detalhe pequeno que fez gostar e ninguem comenta",
+            "a situacao da rotina em que mais usa",
+            "comprou para outra pessoa e acabou querendo um tambem",
+            "ja usa faz um tempo e conta se continua gostando",
+            "a expectativa x o que achou de verdade",
+        ],
     },
     "curiosity_hook": {
         "idea": (
@@ -1482,6 +1526,18 @@ CART_ARROWS_NOTE = (
 )
 
 
+def _cart_arrows_note(direction):
+    """As setas pedem uma CTA no carrinho; no depoimento ela precisa continuar
+    soando como indicacao pessoal, nao como ordem de locutor."""
+    if SCRIPT_DIRECTIONS.get(direction, {}).get("cta"):
+        return (
+            "Este video tera setas animadas 'COMPRE AQUI' apontando para o carrinho "
+            "laranja, no canto inferior esquerdo da tela. O fechamento pode citar "
+            "esse carrinho aqui embaixo, mantendo o tom de indicacao pessoal."
+        )
+    return CART_ARROWS_NOTE
+
+
 def _direction_instruction(direction, part="speech"):
     """Bloco do prompt com o formato do lote. `part` = "speech" inclui a
     estrutura da narracao; "overlay" so o necessario para frase e legenda."""
@@ -1499,10 +1555,12 @@ def _direction_instruction(direction, part="speech"):
     return "\n".join(lines) + "\n"
 
 
-def _variety_instruction(n, avoid=None):
+def _variety_instruction(n, avoid=None, direction=None):
     """Distribui um angulo de abertura diferente por item e lista o que ja foi
-    gerado em outros lotes do mesmo job, para nada se repetir."""
-    angles = random.sample(HOOK_ANGLES, k=min(n, len(HOOK_ANGLES)))
+    gerado em outros lotes do mesmo job, para nada se repetir. Formatos com
+    angulos proprios usam os seus: os genericos puxam o texto para anuncio."""
+    pool = SCRIPT_DIRECTIONS.get(direction, {}).get("angles") or HOOK_ANGLES
+    angles = random.sample(pool, k=min(n, len(pool)))
     lines = [
         "\nVARIEDADE: cada item deve ser um teste diferente para o publico. "
         "Use um angulo de abertura distinto por item:"
@@ -1550,8 +1608,8 @@ def generate_phrases(n, theme, extra_tags=None, direction=None, avoid=None,
 
     user_prompt = (
         f"{theme_part}\n{_direction_instruction(direction, 'overlay')}"
-        f"{_variety_instruction(n, avoid)}"
-        + (f"\n{CART_ARROWS_NOTE} A legenda do post pode reforcar isso.\n" if cart_arrows else "")
+        f"{_variety_instruction(n, avoid, direction)}"
+        + (f"\n{_cart_arrows_note(direction)} A legenda do post pode reforcar isso.\n" if cart_arrows else "")
         + f"\nGere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         '- "overlay": a frase que fica NA TELA do video, no maximo 120 caracteres '
         "(pode usar 1 ou 2 emojis);\n"
@@ -1712,21 +1770,20 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direc
         else "O video e generico; crie ganchos chamativos de uso geral."
     )
 
-    system_prompt = (
+    d = SCRIPT_DIRECTIONS.get(direction, {})
+    system_prompt = d.get("persona", (
         "Voce e um roteirista brasileiro especialista em videos de venda para TikTok "
         "Shop. Escreva fala natural, persuasiva e ritmada, feita para ser narrada, "
         "sem inventar preco, desconto, certificacao, resultado garantido ou atributo "
         "do produto que nao esteja no contexto. O objetivo e reter, demonstrar valor "
         "e levar a pessoa ao carrinho laranja."
-    )
+    )) + " Responda sempre em portugues do Brasil, em texto feito para ser narrado."
+    cta = d.get("cta", "termine SEMPRE com uma CTA explicita para clicar no carrinho laranja.")
 
     # Sem formato definido, vale a estrutura generica de anuncio. Com formato, a
     # estrutura dele manda -- impor as duas faria todos os lotes convergirem.
     if direction in SCRIPT_DIRECTIONS:
-        structure = (
-            "Siga a estrutura e o tom do FORMATO OBRIGATORIO acima, e termine "
-            "SEMPRE com uma CTA explicita para clicar no carrinho laranja. "
-        )
+        structure = f"Siga a estrutura e o tom do FORMATO OBRIGATORIO acima, e {cta} "
     else:
         structure = (
             "Estruture a fala nesta ordem: (1) GANCHO imediato que interrompe a rolagem; "
@@ -1738,8 +1795,8 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direc
 
     user_prompt = (
         f"{theme_part}\n{_direction_instruction(direction)}"
-        f"{_variety_instruction(n, avoid)}"
-        + (f"\n{CART_ARROWS_NOTE}\n" if cart_arrows else "")
+        f"{_variety_instruction(n, avoid, direction)}"
+        + (f"\n{_cart_arrows_note(direction)}\n" if cart_arrows else "")
         + f"\nO video tem {video_duration:.1f} segundos e a narracao precisa ocupar praticamente todo esse tempo.\n"
         f"Gere exatamente {n} itens DIFERENTES entre si. Cada item tem:\n"
         "- \"overlay\": frase curta e impactante para FICAR NA TELA do video "
@@ -1771,7 +1828,7 @@ def generate_overlay_and_speech(n, theme, video_duration, extra_tags=None, direc
             user_prompt
             + "\n\nA resposta anterior ficou curta e foi rejeitada. Confira a contagem "
             f"antes de responder: cada speech deve ter de {words_min} a {words_max} "
-            "palavras e terminar chamando para clicar no carrinho laranja."
+            f"palavras, e {cta}"
         )
         retried = parse_overlay_speech(
             _openrouter_chat(system_prompt, retry_prompt, temperature=0.65), n
